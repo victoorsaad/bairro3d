@@ -1,0 +1,8 @@
+raw/
+out/
+site/data/
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+screenshots/

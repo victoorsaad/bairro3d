@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="pt-BR" data-lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Largo da Batata em 3D</title>
+<meta name="description" content="Maquete 3D de Pinheiros, em São Paulo, em volta do Largo da Batata, feita só com dados abertos: prédios, relevo, árvores, zoneamento, alagamento, transporte e preço do m².">
+<meta property="og:title" content="Largo da Batata em 3D">
+<meta property="og:description" content="Maquete 3D de Pinheiros feita só com dados abertos.">
+<meta name="theme-color" content="#f4f1ea">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 26V14l6-3v15M12 26V7l8-3v22M22 26V12l6 2v12' fill='none' stroke='%230c2a22' stroke-width='2.4' stroke-linejoin='round'/%3E%3C/svg%3E">
+<script>
+  (function () {
+    var d = document.documentElement;
+    try {
+      var t = localStorage.getItem("theme");
+      if (t === "light" || t === "dark") d.setAttribute("data-theme", t);
+      var q = new URLSearchParams(location.search).get("lang");
+      var l = q || localStorage.getItem("lang") || ((navigator.language || "").toLowerCase().indexOf("pt") === 0 ? "pt" : "en");
+      if (l === "pt" || l === "en") { d.setAttribute("data-lang", l); d.lang = l === "pt" ? "pt-BR" : "en"; }
+    } catch (e) {}
+  })();
+</script>
+<link rel="stylesheet" href="assets/app.css?v=1">
+</head>
+<body>
+<header class="bar">
+  <span class="mark">BAIRRO 3D</span>
+  <div class="right">
+    <div class="lang" role="group" aria-label="Idioma / Language">
+      <button type="button" data-set-lang="pt" aria-pressed="true">PT</button>
+      <button type="button" data-set-lang="en" aria-pressed="false">EN</button>
+    </div>
+    <button type="button" class="tema" id="tema" aria-label="Tema claro ou escuro / Light or dark theme">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+  <section class="wrap hero">
+    <p class="kicker"><span lang="pt">Pinheiros, São Paulo · só dados abertos</span><span lang="en">Pinheiros, São Paulo · open data only</span></p>
+    <h1><span lang="pt">O Largo da Batata em 3D</span><span lang="en">Largo da Batata in 3D</span></h1>
+    <p class="lede">
+      <span lang="pt">Uma maquete navegável de 2,3 km em volta do Largo da Batata: os prédios com a altura do mapa, o relevo, as árvores e as ruas. Por cima, camadas públicas da cidade: zoneamento e obras aprovadas, manchas de alagamento, transporte, ocorrências policiais e o preço do m² das vendas registradas. Arraste para girar, use a rolagem ou a pinça para aproximar e toque num prédio para ver os detalhes.</span>
+      <span lang="en">A walkable model of the 2.3 km around Largo da Batata: buildings at their mapped height, plus terrain, street trees and streets. On top, public city layers: zoning and approved construction, flood zones, transit, reported crime and the price per m² of registered sales. Drag to orbit, scroll or pinch to zoom and tap a building for details.</span>
+    </p>
+  </section>
+
+  <section class="wrap">
+    <div class="palco" id="palco">
+      <div class="carregando" id="carregando" role="status">
+        <div class="predinhos" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        <b id="carregandoTxt"><span lang="pt">Montando o bairro…</span><span lang="en">Building the neighbourhood…</span></b>
+      </div>
+      <div class="flut cams" id="cams" role="group" aria-label="Câmeras / Cameras"></div>
+      <div class="flut acoes">
+        <div class="filtros" id="filtros" hidden role="dialog" aria-label="Camadas / Layers">
+          <b><span lang="pt">Camadas</span><span lang="en">Layers</span></b>
+          <div class="fgrid">
+            <button id="btRelevo" aria-pressed="true"><span lang="pt">Relevo</span><span lang="en">Terrain</span></button>
+            <button id="btLugares" aria-pressed="true"><span lang="pt">Lugares</span><span lang="en">Places</span></button>
+            <button id="btPostos" aria-pressed="false"><span lang="pt">Combustível</span><span lang="en">Fuel</span></button>
+            <button id="btZonas" aria-pressed="false"><span lang="pt">Zoneamento</span><span lang="en">Zoning</span></button>
+            <button id="btPreco" aria-pressed="false"><span lang="pt">Preço do m²</span><span lang="en">Price per m²</span></button>
+            <button id="btCam" aria-pressed="false" aria-expanded="false"><span lang="pt">Mais camadas</span><span lang="en">More layers</span></button>
+          </div>
+          <b><span lang="pt">Vista</span><span lang="en">View</span></b>
+          <div class="fgrid">
+            <button id="btSol" aria-pressed="false"><span lang="pt">Sol e sombra</span><span lang="en">Sun and shade</span></button>
+            <button id="btNoite" aria-pressed="false"><span lang="pt">Noite</span><span lang="en">Night</span></button>
+            <button id="btRua" aria-pressed="false"><span lang="pt">Na rua</span><span lang="en">Street level</span></button>
+            <button id="btGirar" aria-pressed="false"><span lang="pt">Girar</span><span lang="en">Orbit</span></button>
+          </div>
+        </div>
+        <button id="btFiltros" class="btFiltros" aria-expanded="false" aria-controls="filtros"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span lang="pt">Camadas</span><span lang="en">Layers</span><span class="nf" id="nFiltros"></span></button>
+      </div>
+      <div class="bussola" title="N"><svg viewBox="0 0 30 30" aria-hidden="true"><g id="agulha"><path d="M15 3l4 12h-8z" fill="#c2412d"/><path d="M15 27l-4-12h8z" fill="#9aa3a0"/></g></svg></div>
+      <button class="casa" id="btCasa" aria-label="Voltar ao centro / Back to centre" title="Centro / Centre"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
+      <div class="cartao-sol" id="cartaoSol" hidden>
+        <div class="cab"><b><span lang="pt">Sol e sombra</span><span lang="en">Sun and shade</span></b>
+          <select id="solDia" aria-label="Dia / Day"></select><button id="solFechar" aria-label="Fechar / Close">×</button></div>
+        <div class="hora"><button id="solPlay" aria-label="Animar o dia / Animate the day">▶</button><input type="range" id="solHora" min="330" max="1170" step="5" value="720" aria-label="Hora / Time"></div>
+        <p id="solTxt" class="txt"></p>
+        <p class="mt"><span lang="pt">Posição real do sol em São Paulo (UTC−3). As sombras saem dos prédios e do relevo.</span><span lang="en">True sun position for São Paulo (UTC−3). Shadows come from buildings and terrain.</span></p>
+      </div>
+      <div class="cartao-sol cartao-cam" id="cartaoCam" hidden>
+        <div class="cab"><b><span lang="pt">Mais camadas</span><span lang="en">More layers</span></b><button id="camFechar" aria-label="Fechar / Close">×</button></div>
+        <div class="corpo"></div>
+      </div>
+      <div class="cartao-sol cartao-zonas" id="cartaoZonas" hidden>
+        <div class="cab"><b><span lang="pt">Zoneamento</span><span lang="en">Zoning</span></b><button id="zonasFechar" aria-label="Fechar / Close">×</button></div>
+        <div class="futuro"><b><span lang="pt">Horizonte</span><span lang="en">Skyline</span></b>
+          <div class="seg" id="segFuturo" role="group" aria-label="Skyline">
+            <button data-e="0" aria-pressed="true">2020</button><button data-e="1" aria-pressed="false"><span lang="pt">Hoje</span><span lang="en">Today</span></button><button data-e="2" aria-pressed="false"><span lang="pt">+ aprovados</span><span lang="en">+ approved</span></button><button data-e="3" aria-pressed="false"><span lang="pt">+ potencial</span><span lang="en">+ potential</span></button>
+          </div>
+          <p class="mt" id="futTxt"></p></div>
+        <div class="leg"></div>
+        <p class="mt"><span lang="pt">Lei 18.177/24 (GeoSampa). Toque num volume para ver os detalhes.</span><span lang="en">Zoning law 18,177/24 (GeoSampa). Tap a volume for details.</span></p>
+      </div>
+      <div class="cartao-sol cartao-preco" id="cartaoPreco" hidden>
+        <div class="cab"><b><span lang="pt">Preço do m²</span><span lang="en">Price per m²</span></b><button id="precoFechar" aria-label="Fechar / Close">×</button></div>
+        <div class="corpo"></div>
+      </div>
+      <div class="balao" id="balao" hidden></div>
+      <div class="nomeLugar" id="nomeLugar" hidden></div>
+    </div>
+  </section>
+
+  <section class="wrap painel">
+    <div class="cartao" id="info" aria-live="polite"></div>
+    <div class="cartao" id="cartaoLugares">
+      <h2><span lang="pt">Lugares no mapa</span><span lang="en">Places on the map</span></h2>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div class="cartao" id="cartaoPostos" hidden>
+      <h2><span lang="pt">Combustível</span><span lang="en">Fuel prices</span></h2>
+      <p class="sub" id="postosInfo"></p>
+      <div class="lista" id="postosLista"></div>
+    </div>
+    <div class="cartao" id="cartaoDestaques" hidden>
+      <h2><span lang="pt">Lugares conhecidos</span><span lang="en">Landmarks</span></h2>
+      <div class="lista" id="destaquesLista"></div>
+    </div>
+  </section>
+
+  <section class="wrap sobre">
+    <h2><span lang="pt">Como foi feito</span><span lang="en">How it was made</span></h2>
+    <div lang="pt">
+      <p>Tudo aqui vem de bases públicas e abertas, baixadas e processadas por um pipeline em Python e desenhadas no navegador com three.js. Nenhuma chave de API, nenhum serviço pago, nenhum rastreador: a página e os dados são arquivos estáticos.</p>
+      <p>Preços e ocorrências aparecem só agregados: o ITBI por quadra (mediana do m², com mínimo de vendas), os crimes em células de 100 m (com mínimo de ocorrências). Nenhuma transação, boletim ou endereço individual é publicado.</p>
+    </div>
+    <div lang="en">
+      <p>Everything here comes from public, open datasets, downloaded and processed by a Python pipeline and drawn in the browser with three.js. No API keys, no paid services, no trackers: the page and its data are static files.</p>
+      <p>Prices and crime are shown only in aggregate: property-transfer tax records (ITBI) per city block (median price per m², with a minimum number of sales) and police reports in 100 m cells (with a minimum count). No individual sale, report or address is published.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="rodape">
+  <div class="wrap">
+    <h2><span lang="pt">Fontes e atribuições</span><span lang="en">Sources and attribution</span></h2>
+    <ul class="fontes">
+      <li><b>OpenStreetMap</b> — <span lang="pt">contornos de prédios, ruas, praças, trilhos, lugares e pontos de interesse.</span><span lang="en">building footprints, streets, parks, rail, landmarks and points of interest.</span> © <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap contributors</a>, ODbL.</li>
+      <li><b>Overture Maps Foundation</b> — <span lang="pt">construções que faltavam no OSM (tema buildings, que inclui Microsoft ML Buildings e Google Open Buildings).</span><span lang="en">buildings missing from OSM (buildings theme, which includes Microsoft ML Buildings and Google Open Buildings).</span> © <a href="https://overturemaps.org" rel="noopener">Overture Maps Foundation</a>, ODbL.</li>
+      <li><b>Prefeitura de São Paulo · GeoSampa</b> — <span lang="pt">contornos de edificação, árvores, curvas de nível e pontos cotados, zoneamento (Lei 18.177/24), lotes, habitação popular, manchas de inundação, risco hidrológico, ônibus, metrô e trem.</span><span lang="en">building footprints, street trees, contour lines and spot heights, zoning (law 18,177/24), lots, social housing permits, flood zones, flood risk areas, buses, metro and rail.</span> <a href="https://geosampa.prefeitura.sp.gov.br" rel="noopener">geosampa.prefeitura.sp.gov.br</a></li>
+      <li><b>Prefeitura de São Paulo · dados abertos</b> — <span lang="pt">Aprova Digital (SMUL, pedidos de alvará) e guias de ITBI pagas (Secretaria da Fazenda), agregadas por quadra.</span><span lang="en">Aprova Digital (building permit requests) and paid ITBI property-transfer tax records (Finance Department), aggregated per block.</span> <a href="https://dados.prefeitura.sp.gov.br" rel="noopener">dados.prefeitura.sp.gov.br</a></li>
+      <li><b>SSP-SP</b> — <span lang="pt">dados criminais com local, últimos 12 meses, agregados em células de 100 m.</span><span lang="en">geolocated crime records, last 12 months, aggregated into 100 m cells.</span> <a href="https://www.ssp.sp.gov.br/estatistica/consultas" rel="noopener">ssp.sp.gov.br</a></li>
+      <li><b>ANP</b> — <span lang="pt">levantamento semanal de preços de combustíveis (amostra de postos).</span><span lang="en">weekly fuel price survey (a sample of stations).</span> <a href="https://www.gov.br/anp/pt-br/assuntos/precos-e-defesa-da-concorrencia/precos/levantamento-de-precos-de-combustiveis-ultimas-semanas-pesquisadas" rel="noopener">gov.br/anp</a></li>
+      <li><b>Copernicus DEM GLO-30</b> — <span lang="pt">relevo além da maquete.</span><span lang="en">terrain beyond the model.</span> © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA.</li>
+      <li><b>three.js</b> 0.169.0 (MIT) — <span lang="pt">desenho 3D no navegador.</span><span lang="en">3D rendering in the browser.</span></li>
+    </ul>
+    <p class="dim" id="geradoEm"></p>
+  </div>
+</footer>
+
+<script type="module" src="assets/app.js?v=1"></script>
+</body>
+</html>

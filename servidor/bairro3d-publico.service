@@ -1,0 +1,44 @@
+[Unit]
+Description=Maquete 3D pública do Largo da Batata (estático, porta 8103)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=bairro3d
+Group=bairro3d
+Type=simple
+WorkingDirectory=/opt/bairro3d-publico
+# Bind em 127.0.0.1 até a revisão; para o túnel, trocar por 0.0.0.0 e liberar no ufw só o cloudflared.
+ExecStart=/usr/bin/python3 /opt/bairro3d-publico/serve.py 8103 127.0.0.1
+Restart=always
+RestartSec=5
+# Só enxerga o site, só leitura.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+TemporaryFileSystem=/opt:ro /srv:ro /mnt:ro /media:ro
+BindReadOnlyPaths=/opt/bairro3d-publico/serve.py /opt/bairro3d-publico/site
+InaccessiblePaths=-/var/lib/postgresql -/var/run/postgresql -/run/postgresql -/var/backups -/root -/etc/postgresql
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target
