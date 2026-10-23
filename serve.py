@@ -26,7 +26,7 @@ CSP = (
     "default-src 'self'; "
     "script-src 'self' 'sha256-{inline}'; "
     "style-src 'self' 'unsafe-inline'; "  # cores das legendas e posição das pílulas vão em style=
-    "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
+    "img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src https://embed.waze.com; "
     "object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 )
 NOME = re.compile(r"^[A-Za-z0-9_-]+\.(json|bin)$")

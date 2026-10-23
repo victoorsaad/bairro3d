@@ -1747,3 +1747,11 @@ renderer.setAnimationLoop(()=>{
   agulha.setAttribute("transform",`rotate(${-az*180/Math.PI} 15 15)`);
 });
 
+
+// mapa ao vivo do Waze (iframe oficial; só carrega quando a pessoa pede)
+document.getElementById("abrirWaze").onclick=e=>{
+  const caixa=document.getElementById("waze"), aberto=!!caixa.firstChild, o=B.meta.origem, bt=e.currentTarget;
+  caixa.innerHTML=aberto?"":`<iframe title="${T("Mapa ao vivo do Waze","Live Waze map")}" src="https://embed.waze.com/${EN()?"en":"pt-BR"}/iframe?zoom=15&lat=${o.lat}&lon=${o.lon}&ct=livemap" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
+  bt.setAttribute("aria-expanded",!aberto);
+  bt.innerHTML=aberto?L("Abrir mapa do Waze","Open Waze map"):L("Fechar mapa do Waze","Close Waze map");
+};
