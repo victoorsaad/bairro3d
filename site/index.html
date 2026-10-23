@@ -21,7 +21,7 @@
     } catch (e) {}
   })();
 </script>
-<link rel="stylesheet" href="assets/app.css?v=2">
+<link rel="stylesheet" href="assets/app.css?v=3">
 </head>
 <body>
 <header class="bar">
@@ -118,12 +118,6 @@
       <p class="sub" id="postosInfo"></p>
       <div class="lista" id="postosLista"></div>
     </div>
-    <div class="cartao" id="cartaoWaze">
-      <h2><span lang="pt">Trânsito ao vivo</span><span lang="en">Live traffic</span></h2>
-      <p class="sub"><span lang="pt">Mapa do Waze em volta do centro da maquete. Só carrega quando você pede.</span><span lang="en">Waze map around the model's centre. Loads only when you ask.</span></p>
-      <button type="button" class="btWaze" id="abrirWaze" aria-expanded="false"><span lang="pt">Abrir mapa do Waze</span><span lang="en">Open Waze map</span></button>
-      <div class="waze" id="waze"></div>
-    </div>
     <div class="cartao" id="cartaoDestaques" hidden>
       <h2><span lang="pt">Lugares conhecidos</span><span lang="en">Landmarks</span></h2>
       <div class="lista" id="destaquesLista"></div>
@@ -133,11 +127,11 @@
   <section class="wrap sobre">
     <h2><span lang="pt">Como foi feito</span><span lang="en">How it was made</span></h2>
     <div lang="pt">
-      <p>Tudo aqui vem de bases públicas e abertas, baixadas e processadas por um pipeline em Python e desenhadas no navegador com three.js. Nenhuma chave de API, nenhum serviço pago, nenhum rastreador: a página e os dados são arquivos estáticos. A única exceção é o mapa ao vivo do Waze, que só carrega se você clicar.</p>
+      <p>Tudo aqui vem de bases públicas e abertas, baixadas e processadas por um pipeline em Python e desenhadas no navegador com three.js. Nenhuma chave de API, nenhum serviço pago, nenhum rastreador: a página e os dados são arquivos estáticos.</p>
       <p>Preços e ocorrências aparecem só agregados: o ITBI por quadra (mediana do m², com mínimo de vendas), os crimes em células de 100 m (com mínimo de ocorrências). Nenhuma transação, boletim ou endereço individual é publicado.</p>
     </div>
     <div lang="en">
-      <p>Everything here comes from public, open datasets, downloaded and processed by a Python pipeline and drawn in the browser with three.js. No API keys, no paid services, no trackers: the page and its data are static files. The one exception is the live Waze map, which loads only if you click it.</p>
+      <p>Everything here comes from public, open datasets, downloaded and processed by a Python pipeline and drawn in the browser with three.js. No API keys, no paid services, no trackers: the page and its data are static files.</p>
       <p>Prices and crime are shown only in aggregate: property-transfer tax records (ITBI) per city block (median price per m², with a minimum number of sales) and police reports in 100 m cells (with a minimum count). No individual sale, report or address is published.</p>
     </div>
   </section>
@@ -160,6 +154,6 @@
   </div>
 </footer>
 
-<script type="module" src="assets/app.js?v=2"></script>
+<script type="module" src="assets/app.js?v=3"></script>
 </body>
 </html>
