@@ -6,6 +6,7 @@ Serve só o que está na allowlist:
   /assets/<...>             -> arquivos em site/assets (app, estilo, fontes, three.js vendorizado)
   /data/<x>.json|<x>.bin    -> dados gerados pelo pipeline
   /data/chunks/<c>.json     -> pedaços do anel carregados perto da câmera
+  /robots.txt, /sitemap.xml, /og.jpg -> indexação e prévia de link
 Qualquer outra coisa (diretórios, dotfiles, .py, caminhos com ..) é 404.
 
 Bind padrão em 127.0.0.1: só a própria máquina acessa até a revisão. Para expor (túnel, proxy),
@@ -29,6 +30,7 @@ CSP = (
     "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
     "object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 )
+INDEXNOW = "28b9e63caa484e51e63f2863046c6c99.txt"  # chave pública do IndexNow (Bing e outros buscadores); não é segredo
 NOME = re.compile(r"^[A-Za-z0-9_-]+\.(json|bin)$")
 
 
@@ -43,7 +45,7 @@ def is_public(path):
     parts = [p for p in path.split("/") if p]
     if not parts or any(p.startswith(".") or p == ".." or "\\" in p for p in parts):
         return False
-    if parts == ["index.html"]:
+    if parts in (["index.html"], ["robots.txt"], ["sitemap.xml"], ["og.jpg"], [INDEXNOW]):
         return True
     if parts[0] == "assets":
         return len(parts) > 1 and os.path.isfile(os.path.join(ROOT, *parts))

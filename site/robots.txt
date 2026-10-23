@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://bairro3d.saadcloud.com.br/sitemap.xml
