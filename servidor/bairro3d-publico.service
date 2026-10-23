@@ -8,8 +8,8 @@ User=bairro3d
 Group=bairro3d
 Type=simple
 WorkingDirectory=/opt/bairro3d-publico
-# Bind em 127.0.0.1 até a revisão; para o túnel, trocar por 0.0.0.0 e liberar no ufw só o cloudflared.
-ExecStart=/usr/bin/python3 /opt/bairro3d-publico/serve.py 8103 127.0.0.1
+# Escuta em todas as interfaces; o ufw só libera a 8103 para o cloudflared (.45) e o Tailscale (.46).
+ExecStart=/usr/bin/python3 /opt/bairro3d-publico/serve.py 8103 0.0.0.0
 Restart=always
 RestartSec=5
 # Só enxerga o site, só leitura.
@@ -39,6 +39,7 @@ SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 RestrictAddressFamilies=AF_INET AF_INET6
 MemoryMax=256M
+TasksMax=64
 
 [Install]
 WantedBy=multi-user.target

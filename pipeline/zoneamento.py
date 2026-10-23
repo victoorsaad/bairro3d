@@ -104,9 +104,8 @@ for pr, g in lotes:
     if any(w in uso for w in ("escola", "templo", "hospital")): continue
     hp, proj = estima(z, g.area)
     if hp < max(18, h0 + 9): continue
-    end = " ".join(str(x) for x in (pr.get("nm_logradouro_completo"), pr.get("cd_numero_porta")) if x)
-    potenciais.append({"z": z, "p": plano(g.simplify(.8)), "a": round(g.area), "h0": round(h0, 1), "h": hp, "proj": proj,
-                       "e": end.title(), "uso": pr.get("dc_tipo_uso_imovel")})
+    # imóvel particular: sem endereço nem uso atual na versão pública (não vira lista de porta para bater)
+    potenciais.append({"z": z, "p": plano(g.simplify(.8)), "a": round(g.area), "h0": round(h0, 1), "h": hp, "proj": proj})
 print("potenciais", len(potenciais))
 
 # alvarás de HIS/HMP

@@ -925,9 +925,9 @@ function infoFantasma(tipo,l){
   if(tipo==="obra") return infoObra(l);
   const zi=zonaDe(l.z), par=ZN.param[l.z]||ZN.param[l.z?.replace(/-\d$/,"")]||null, [cx,cy]=centroDeLista(l.p), d=Math.hypot(cx,cy);
   info.innerHTML=`<p class="tit">${tipo==="alvara"?L("Alvará de moradia popular","Affordable housing permit"):L("Lote que pode virar prédio","Lot that could become a tower")}</p>
-    <p class="sub">${esc(l.e||T("Endereço não informado","Address not given"))}</p>
+    <p class="sub">${tipo==="potencial"?L("Imóvel particular: endereço omitido","Private property: address withheld"):esc(l.e||T("Endereço não informado","Address not given"))}</p>
     <dl><dt>${L("Zona","Zone")}</dt><dd><span style="color:${zi.c};font-weight:500">${zi.n}</span>${par?` · ${L("coeficiente até","floor area ratio up to")} ${par.ca}×${par.gab?` · ${L("até","up to")} ${par.gab} m`:` · ${L("sem limite de altura","no height limit")}`}`:""}</dd>
-    <dt>${L("Terreno","Lot")}</dt><dd>${num(l.a)} m²${tipo==="potencial"&&l.uso?` · ${L("hoje","today")}: ${esc(l.uso.toLowerCase())}`:""}</dd>
+    <dt>${L("Terreno","Lot")}</dt><dd>${num(l.a)} m²</dd>
     <dt>${L("Hoje","Today")}</dt><dd>${l.h0>=3?L(`construção de ~${Math.round(l.h0)} m`,`~${Math.round(l.h0)} m structure`):L("sem construção relevante","nothing significant built")} (${L("maquete","model")})</dd>
     ${tipo==="alvara"?`<dt>${L("Aprovado","Approved")}</dt><dd>${num(l.ac)} m²${l.u?` · ${l.u} ${L("unidades","units")}`:""}${l.def?` · ${L("deferido em","granted on")} ${dataBR(l.def)}`:` · ${L("em análise","under review")}`}</dd>`:""}
     <dt>${L("Altura estimada","Estimated height")}</dt><dd>~${Math.round(l.h)} m (~${Math.max(1,Math.round((l.h-4)/3))} ${L("andares","floors")})</dd>

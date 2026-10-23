@@ -59,6 +59,7 @@ class Handler(SimpleHTTPRequestHandler):
     server_version = "bairro3d/1.0"
     sys_version = ""
     protocol_version = "HTTP/1.1"
+    timeout = 20  # conexão parada (slowloris) não segura thread para sempre
     extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".json": "application/json",
                       ".bin": "application/octet-stream", ".js": "text/javascript", ".woff2": "font/woff2"}
 
