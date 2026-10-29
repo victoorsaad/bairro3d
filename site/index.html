@@ -36,7 +36,7 @@
     } catch (e) {}
   })();
 </script>
-<link rel="stylesheet" href="assets/app.css?v=6">
+<link rel="stylesheet" href="assets/app.css?v=7">
 </head>
 <body>
 <header class="bar">
@@ -92,6 +92,8 @@
             <button id="btNoite" aria-pressed="false"><span lang="pt">Noite</span><span lang="en">Night</span></button>
             <button id="btRua" aria-pressed="false"><span lang="pt">Na rua</span><span lang="en">Street level</span></button>
             <button id="btGirar" aria-pressed="false"><span lang="pt">Girar</span><span lang="en">Orbit</span></button>
+            <button id="btPasseio" aria-pressed="false"><span lang="pt">Passeio</span><span lang="en">Fly-through</span></button>
+            <button id="btGravar" aria-pressed="false"><span lang="pt">Gravar vídeo</span><span lang="en">Record video</span></button>
           </div>
           <b><span lang="pt">Lente</span><span lang="en">Lens</span></b>
           <div class="seg lentes" id="segEstilo" role="group" aria-label="Lente / Lens">
@@ -147,6 +149,11 @@
       <p class="sub" id="postosInfo"></p>
       <div class="lista" id="postosLista"></div>
     </div>
+    <div class="cartao" id="cartaoNoticias" hidden>
+      <h2><span lang="pt">Notícias de Pinheiros</span><span lang="en">Pinheiros news</span></h2>
+      <p class="sub"><span lang="pt">Últimos 7 dias, pelo Google News.</span><span lang="en">Last 7 days, from Google News.</span></p>
+      <div class="lista noticias" id="noticiasLista"></div>
+    </div>
     <div class="cartao" id="cartaoTransito" hidden>
       <h2><span lang="pt">Trânsito agora</span><span lang="en">Traffic now</span></h2>
       <p class="sub" id="transitoInfo"><span lang="pt">Carregando o trânsito…</span><span lang="en">Loading traffic…</span></p>
@@ -189,6 +196,7 @@
       <li><b>Bike Itaú (Tembici)</b> — <span lang="pt">estações e bicicletas livres, ao vivo (GBFS público).</span><span lang="en">stations and available bikes, live (public GBFS feed).</span> <a href="https://bikeitau.com.br" rel="noopener">bikeitau.com.br</a></li>
       <li><b>adsb.lol</b> — <span lang="pt">posição de aviões por ADS-B, ao vivo.</span><span lang="en">live aircraft positions from ADS-B.</span> <a href="https://adsb.lol" rel="noopener">adsb.lol</a>, ODbL.</li>
       <li><b>TomTom</b> — <span lang="pt">velocidade do trânsito por trecho e interdições, ao vivo.</span><span lang="en">live traffic speed per segment and road closures.</span> © <a href="https://www.tomtom.com" rel="noopener">TomTom</a></li>
+      <li><b>Google News</b> — <span lang="pt">manchetes recentes que citam Pinheiros (cada link leva ao veículo).</span><span lang="en">recent headlines mentioning Pinheiros (each link goes to the publisher).</span></li>
       <li><b>Open-Meteo</b> — <span lang="pt">o tempo agora em Pinheiros.</span><span lang="en">current weather in Pinheiros.</span> <a href="https://open-meteo.com" rel="noopener">open-meteo.com</a>, CC BY 4.0.</li>
       <li><b>Copernicus DEM GLO-30</b> — <span lang="pt">relevo além da maquete.</span><span lang="en">terrain beyond the model.</span> © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA.</li>
       <li><b>three.js</b> 0.169.0 (MIT) — <span lang="pt">desenho 3D no navegador.</span><span lang="en">3D rendering in the browser.</span></li>
@@ -198,6 +206,6 @@
   </div>
 </footer>
 
-<script type="module" src="assets/app.js?v=6"></script>
+<script type="module" src="assets/app.js?v=7"></script>
 </body>
 </html>

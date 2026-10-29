@@ -1914,6 +1914,76 @@ if(LINK.e) estilos.liga(LINK.e);
 if(LINK.c){ const quer=new Set(LINK.c); if(quer.has("noite")!==noiteAtual) modo(quer.has("noite"));
   for(const [k,id] of [["bike","btBike"],["avioes","btAvioes"],["transito","btTransito"]]){ const b=document.getElementById(id); if(b&&!b.hidden&&(b.getAttribute("aria-pressed")==="true")!==quer.has(k)) b.click(); } }
 
+// ---------- notícias de Pinheiros (Google News, últimos 7 dias); quando citam um lugar do mapa, dá para voar até ele ----------
+{ const lista=document.getElementById("noticiasLista");
+  const nomes=[...(A?.lugares||[]).filter(p=>p.n&&Math.hypot(p.x,p.y)<B.meta.anel_m).map(p=>({n:p.n,x:p.x,y:p.y})),
+    ...lugares.map(q=>({n:q.l.n,x:q.l.x,y:q.l.y}))].filter(l=>l.n.length>=10).sort((a,b)=>b.n.length-a.n.length);   // "Pinheiros" sozinho casaria com tudo
+  const sem=t=>t.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
+  const quando=t=>{ const h=(Date.now()/1000-t)/3600; return h<1?L("agora há pouco","just now"):h<24?L(`há ${Math.round(h)} h`,`${Math.round(h)} h ago`):L(`há ${Math.round(h/24)} d`,`${Math.round(h/24)} d ago`); };
+  fetch("api/noticias").then(r=>r.ok?r.json():null).catch(()=>null).then(D=>{
+    if(!D||!D.noticias.length) return;
+    const itens=D.noticias.map(n=>({...n,lugar:nomes.find(l=>sem(n.t).includes(sem(l.n)))}));
+    lista.innerHTML=itens.map((n,i)=>`<div class="noticia"><a href="${esc(n.u)}" target="_blank" rel="noopener nofollow"><b>${esc(n.t)}</b></a>
+      <span>${esc(n.f)} · ${quando(n.q)}${n.lugar?` · <button type="button" class="sec" data-i="${i}">${L("ver no mapa","show on map")}: ${esc(n.lugar.n)}</button>`:""}</span></div>`).join("");
+    lista.onclick=e=>{ const b=e.target.closest("button[data-i]"); if(!b) return; const l=itens[+b.dataset.i].lugar, h=alturaEm(l.x,l.y), alvo=new THREE.Vector3(l.x,h,-l.y);
+      const d=camera.position.clone().sub(controls.target).setY(0).normalize(); voarPara(alvo.clone().add(d.multiplyScalar(320)).setY(h+240),alvo);
+      setTimeout(()=>abrirBalao(alvo.clone().setY(h+12),`<b>${esc(l.n)}</b><p>${esc(itens[+b.dataset.i].t)}</p>`),1450); palco.scrollIntoView({behavior:"smooth",block:"center"}); };
+    document.getElementById("cartaoNoticias").hidden=false;
+  });
+}
+
+// ---------- diretor de cena: passeio de câmera pronto (e gravação do canvas em vídeo, sem os botões) ----------
+const diretor=(()=>{
+  const btP=document.getElementById("btPasseio"), btG=document.getElementById("btGravar");
+  const V3=(x,y,z)=>new THREE.Vector3(x,y,z), alto=(x,z)=>hZ(x,z);
+  // pontos do roteiro: chegada do alto, rasante, volta em torno do centro e os três lugares conhecidos mais perto; termina no bairro todo
+  function roteiro(){
+    const [p0,a0]=CAMS[0][1](), [p1,a1]=CAMS[1][1](), [p3,a3]=CAMS[3][1](), s=[];
+    s.push({p:V3(420,1700,-260),a:C.clone(),d:0},{p:p0,a:a0,d:4500},{p:p1,a:a1,d:4500});
+    s.push({orbita:{r:340,h:170,de:Math.atan2(p1.x,p1.z),graus:200},a:V3(0,30,0),d:9000});
+    const perto=lugares.filter(q=>q.l.m>250&&q.l.m<1600&&q.l.t!=="metro"&&q.l.t!=="trem").sort((a,b)=>a.l.m-b.l.m).slice(0,3);
+    for(const q of perto){ const t=q.pos.clone(), d=t.clone().setY(0).normalize(); s.push({p:t.clone().add(d.multiplyScalar(380)).setY(t.y+260),a:t,d:4200}); }
+    s.push({p:p3,a:a3,d:5000});
+    return s;
+  }
+  let ativo=null, gravador=null;
+  const ui=on=>{ palco.classList.toggle("gravando",on); };
+  function para(){ if(!ativo) return; ativo=null; ui(false); controls.enabled=true; btP.setAttribute("aria-pressed",false);
+    if(gravador&&gravador.state!=="inactive") gravador.stop(); }
+  function toca(gravar){
+    if(ativo){ para(); return; }
+    fecharBalao(); fechaCartoes?.(); document.getElementById("filtros").hidden=true; document.getElementById("btFiltros").setAttribute("aria-expanded",false);
+    const s=roteiro(); let i=1, t0=performance.now(), de={p:camera.position.clone(),a:controls.target.clone()};
+    camera.position.copy(s[0].p); controls.target.copy(s[0].a); de={p:s[0].p.clone(),a:s[0].a.clone()};
+    ativo={s,i,t0,de}; anim=null; controls.enabled=false; btP.setAttribute("aria-pressed",true); ui(true);
+    if(gravar){
+      const tipo=["video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm","video/mp4"].find(t=>MediaRecorder.isTypeSupported?.(t));
+      if(!tipo||!renderer.domElement.captureStream){ alert(T("Este navegador não grava vídeo do canvas.","This browser cannot record the canvas.")); para(); return; }
+      const pedacos=[]; gravador=new MediaRecorder(renderer.domElement.captureStream(30),{mimeType:tipo,videoBitsPerSecond:12e6});
+      gravador.ondataavailable=e=>{ if(e.data.size) pedacos.push(e.data); };
+      gravador.onstop=()=>{ const b=new Blob(pedacos,{type:tipo}), a=document.createElement("a");
+        a.href=URL.createObjectURL(b); a.download=`bairro3d-passeio.${tipo.includes("mp4")?"mp4":"webm"}`; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(a.href),60e3); gravador=null; };
+      gravador.start(1000);
+    }
+  }
+  btP.onclick=()=>toca(false); btG.onclick=()=>toca(true);
+  addEventListener("keydown",e=>{ if(e.key==="Escape") para(); });
+  renderer.domElement.addEventListener("pointerdown",()=>{ if(ativo&&!gravador) para(); });
+  if(!window.MediaRecorder||!renderer.domElement.captureStream) btG.hidden=true;
+  return { quadro(agora){
+    if(!ativo) return;
+    const q=ativo.s[ativo.i], t=Math.min(1,(agora-ativo.t0)/q.d), k=ease(t);
+    if(q.orbita){ const o=q.orbita, ang=o.de+(o.graus*Math.PI/180)*k, alvoPos=V3(Math.sin(ang)*o.r,0,Math.cos(ang)*o.r);
+      alvoPos.y=Math.max(o.h,alto(alvoPos.x,alvoPos.z)+40);
+      const entra=Math.min(1,t*4); camera.position.lerpVectors(ativo.de.p,alvoPos,entra<1?ease(entra):1); controls.target.lerpVectors(ativo.de.a,q.a,ease(Math.min(1,t*3)));
+      if(entra>=1) camera.position.copy(alvoPos); }
+    else { camera.position.lerpVectors(ativo.de.p,q.p,k); controls.target.lerpVectors(ativo.de.a,q.a,k); }
+    camera.lookAt(controls.target);
+    if(t>=1){ ativo.de={p:camera.position.clone(),a:controls.target.clone()}; ativo.i++; ativo.t0=agora; if(ativo.i>=ativo.s.length) para(); }
+  }, get ativo(){ return !!ativo; } };
+})();
+
 let tAnt=performance.now();
 renderer.setAnimationLoop(()=>{
   const agora=performance.now(), dt=Math.min(.1,(agora-tAnt)/1000); tAnt=agora;
@@ -1926,7 +1996,8 @@ renderer.setAnimationLoop(()=>{
     camera.position.lerpVectors(anim.p0,anim.p1,k); controls.target.lerpVectors(anim.a0,anim.a1,k);
     if(t>=1) anim=null;
   }
-  if(!rua.ativo) controls.update();
+  diretor.quadro(agora);
+  if(!rua.ativo&&!diretor.ativo) controls.update();
   estilos.render(agora);
   rotulo.style.display=!rua.ativo&&projeta(topoC,rotulo,64)?"":"none";
   { // postos: só de perto (câmera a menos de ~1,6 km do alvo); os sem preço, só bem perto

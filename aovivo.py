@@ -8,6 +8,7 @@ Fontes:
   bike   Bike Itaú (Tembici), GBFS público: estações a até anel_m do centro, com bicicletas e vagas livres
   voos   adsb.lol (ADS-B comunitário, ODbL): aviões num raio de 25 milhas náuticas
   clima  Open-Meteo (CC BY 4.0): tempo agora em Pinheiros
+  noticias  Google News (RSS público, sem chave): manchetes dos últimos 7 dias que citam Pinheiros ou o Largo da Batata
   transito  TomTom (chave do plano grátis em TOMTOM_KEY): velocidade relativa por trecho (tiles "flow relative", zoom 14,
             3×3 em volta do centro) + interdições, acidentes e obras. 5 min de cache: ~2,6 mil tiles e 288 consultas por
             dia, longe dos limites grátis (50 mil tiles, 2,5 mil consultas)
@@ -18,7 +19,10 @@ import math
 import os
 import threading
 import time
+import email.utils
+import re
 import urllib.parse
+import xml.etree.ElementTree as ET
 import urllib.request
 
 import mvt
@@ -148,7 +152,33 @@ def transito():
     return {"fonte": "TomTom", "linhas": linhas, "incidentes": incidentes}
 
 
-FONTES = {"bike": (bike, 60), "voos": (voos, 10), "clima": (clima, 600), "transito": (transito, 300)}
+def noticias():
+    q = '"Pinheiros" OR "Largo da Batata" São Paulo when:7d'   # "Faria Lima" puxa notícia de mercado financeiro
+    req = urllib.request.Request("https://news.google.com/rss/search?" + urllib.parse.urlencode({"q": q, "hl": "pt-BR", "gl": "BR", "ceid": "BR:pt-419"}),
+                                 headers={"User-Agent": "Mozilla/5.0 (" + UA + ")"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        raiz = ET.fromstring(r.read(2_000_000))
+    out, vistos = [], set()
+    for it in raiz.findall("./channel/item"):
+        titulo, fonte = (it.findtext("title") or "").strip(), (it.findtext("source") or "").strip()
+        if fonte and titulo.endswith(" - " + fonte):
+            titulo = titulo[: -len(fonte) - 3]
+        if not re.search(r"Pinheiros|Largo da Batata", titulo) or titulo in vistos:
+            continue
+        vistos.add(titulo)
+        link = it.findtext("link") or ""
+        if not link.startswith("https://"):
+            continue
+        try:
+            quando = int(email.utils.parsedate_to_datetime(it.findtext("pubDate")).timestamp())
+        except Exception:
+            quando = 0
+        out.append({"t": titulo, "f": fonte, "u": link, "q": quando})
+    out.sort(key=lambda n: -n["q"])
+    return {"fonte": "Google News", "noticias": out[:15]}
+
+
+FONTES = {"noticias": (noticias, 1800), "bike": (bike, 60), "voos": (voos, 10), "clima": (clima, 600), "transito": (transito, 300)}
 _cache = {}
 _travas = {k: threading.Lock() for k in FONTES}
 
