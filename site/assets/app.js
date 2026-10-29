@@ -1762,6 +1762,52 @@ const aoVivo=(()=>{
   btAvioes.onclick=()=>{ verAv=!verAv; btAvioes.setAttribute("aria-pressed",verAv); salva("avioes",verAv); grupoAv.visible=verAv; cartaoAv.hidden=!verAv; if(verAv) voos(); };
   grupoAv.visible=verAv; cartaoAv.hidden=!verAv;
 
+
+  // --- trânsito (TomTom): cor por trecho conforme a velocidade de agora ÷ a livre; interdições e acidentes como pílulas ---
+  const btTransito=document.getElementById("btTransito"), grupoTr=new THREE.Group(), cartaoTr=document.getElementById("cartaoTransito"); scene.add(grupoTr);
+  const FAIXAS=[[.8,0x2fbf71,.55,["livre","free flow"]],[.6,0xf2c94c,.8,["moderado","moderate"]],[.4,0xf2994a,.85,["lento","slow"]],[0,0xe5484d,.9,["parado","stopped"]]];
+  const matsTr=FAIXAS.map(([,c,op])=>new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:op,depthWrite:false,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2}));
+  const matInc=new THREE.MeshBasicMaterial({color:0x7c3aed,transparent:true,opacity:.95,depthWrite:false,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-4});
+  const ICONE_INC='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></svg>';
+  const celulas=new Map(), CEL=15, incidentes=[];
+  let verTr=salvo("transito",false), tTr=0, D_tr=null;
+  const quando=t=>t?new Date(t).toLocaleString(EN()?"en-GB":"pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",timeZone:"America/Sao_Paulo"}):"";
+  const htmlInc=i=>`<b>${esc(i.tipo[0].toUpperCase()+i.tipo.slice(1))}</b><div class="tipo"><i style="background:#7c3aed"></i>${esc(i.de)}${i.ate&&i.ate!==i.de?" → "+esc(i.ate):""}</div>
+    ${i.desc&&!/^Encerrad/.test(i.desc)?`<p>${esc(i.desc)}</p>`:""}<p>${i.inicio?L("Desde ","Since ")+quando(i.inicio):""}${i.fim?L(" · previsão de fim "," · expected end ")+quando(i.fim):""}${i.atraso?` · ${L("atraso","delay")} ~${Math.round(i.atraso/60)} min`:""}${i.metros?` · ${dist(i.metros)}`:""}</p><p class="mt">TomTom · ${L("ao vivo","live")}</p>`;
+  async function transitoCarrega(){
+    const D=await api("transito"); tTr=performance.now();
+    if(!D){ if(!D_tr){ btTransito.hidden=true; cartaoTr.hidden=true; } return; }
+    D_tr=D;
+    for(const m of [...grupoTr.children]){ grupoTr.remove(m); m.geometry.dispose(); }
+    for(const q of incidentes) q.el.remove(); incidentes.length=0; celulas.clear();
+    const linhas=D.linhas.map(l=>{ const p=[]; for(let i=0;i<l.p.length;i+=2) p.push(...xy(l.p[i],l.p[i+1])); return {p,n:l.n,w:l.w?8:5}; });
+    FAIXAS.forEach(([min],k)=>{ const sel=linhas.filter(l=>l.n>=min&&(k===0||l.n<FAIXAS[k-1][0]));
+      if(sel.length){ const m=new THREE.Mesh(fita(sel,.35),matsTr[k]); m.renderOrder=1; grupoTr.add(m); } });
+    for(const l of linhas){ const q=pares(l.p);
+      for(let i=0;i<q.length-1;i++){ const [x1,z1]=q[i],[x2,z2]=q[i+1], s=Math.max(1,Math.ceil(Math.hypot(x2-x1,z2-z1)/8));
+        for(let j=0;j<=s;j++){ const c=`${Math.floor((x1+(x2-x1)*j/s)/CEL)},${Math.floor((z1+(z2-z1)*j/s)/CEL)}`; celulas.set(c,Math.min(celulas.get(c)??1,l.n)); } } }
+    for(const i of D.incidentes){
+      if(i.linha.length>3){ const p=[]; for(let k=0;k<i.linha.length;k+=2) p.push(...xy(i.linha[k],i.linha[k+1]));
+        const m=new THREE.Mesh(fita([{w:5,p}],.55),matInc); m.renderOrder=3; grupoTr.add(m); }
+      const [x,y]=xy(i.lat,i.lon), h=hZ(x,-y), el=document.createElement("button"); el.type="button"; el.className="posto incidente"; el.style.display="none";
+      el.innerHTML=ICONE_INC+esc(i.tipo); palco.appendChild(el);
+      const q={el,i,pos:new THREE.Vector3(x,h+3,-y),topo:new THREE.Vector3(x,h+10,-y)}; el.addEventListener("click",()=>abrirBalao(q.topo,htmlInc(i))); incidentes.push(q);
+    }
+    const tot=linhas.length||1, lentos=linhas.filter(l=>l.n<.6).length;
+    document.getElementById("transitoInfo").innerHTML=L(`Atualizado às ${hora(Date.now()/1000)} · ${Math.round(lentos/tot*100)}% dos trechos com lentidão.`,`Updated at ${hora(Date.now()/1000)} · ${Math.round(lentos/tot*100)}% of segments slow.`)+
+      ` <span class="legTr">${FAIXAS.map(([,c,,n])=>`<i style="background:#${c.toString(16).padStart(6,"0")}"></i>${L(...n)}`).join("")}</span>`;
+    document.getElementById("incidentesLista").innerHTML=incidentes.map((q,k)=>`<button type="button" data-k="${k}" style="--c:#7c3aed"><i></i><b>${esc(q.i.tipo)}</b><span>${esc(q.i.de)}${q.i.ate&&q.i.ate!==q.i.de?" → "+esc(q.i.ate):""}</span><em>${dist(Math.hypot(q.pos.x,q.pos.z))}</em></button>`).join("")
+      ||`<p>${L("Nenhuma interdição, acidente ou obra no raio agora.","No closures, crashes or roadworks in range right now.")}</p>`;
+    grupoTr.visible=verTr;
+  }
+  document.getElementById("incidentesLista").addEventListener("click",e=>{ const b=e.target.closest("button[data-k]"); const q=b&&incidentes[+b.dataset.k]; if(!q) return;
+    const d=camera.position.clone().sub(controls.target).setY(0).normalize(); voarPara(q.pos.clone().add(d.multiplyScalar(300)).setY(q.pos.y+220),q.pos.clone());
+    setTimeout(()=>abrirBalao(q.topo,htmlInc(q.i)),1450); palco.scrollIntoView({behavior:"smooth",block:"center"}); });
+  function transitoLiga(v){ verTr=v; btTransito.setAttribute("aria-pressed",v); salva("transito",v); grupoTr.visible=v; cartaoTr.hidden=!v; if(v&&!D_tr) transitoCarrega(); }
+  btTransito.onclick=()=>transitoLiga(!verTr);
+  nivelEm=(x,z)=>verTr?(celulas.get(`${Math.floor(x/CEL)},${Math.floor(z/CEL)}`)??1):1;   // carros andam mais devagar onde está lento
+  transitoLiga(verTr);
+
   // --- tempo agora: selo no canto da maquete; com chuva, cai chuva na cena ---
   const selo=document.getElementById("clima");
   const WMO=c=>c===0?["Céu limpo","Clear sky"]:c<=2?["Poucas nuvens","Partly cloudy"]:c===3?["Nublado","Overcast"]:c<=48?["Neblina","Fog"]:c<=57?["Garoa","Drizzle"]:
@@ -1787,9 +1833,14 @@ const aoVivo=(()=>{
   return { quadro(dt,agora){
     if(verBike&&visivel()&&agora-tBike>60e3) bike();
     if(verAv&&visivel()&&agora-tAv>10e3) voos();
+    if(verTr&&visivel()&&agora-tTr>5*60e3) transitoCarrega();
     const dCam=camera.position.distanceTo(controls.target);
     for(const q of estacoes.values()){
       const ok=verBike&&(rua.ativo?q.pos.distanceTo(camera.position)<350:dCam<1600)&&projeta(q.pos,q.el);
+      q.el.style.display=ok?"":"none";
+    }
+    for(const q of incidentes){
+      const ok=verTr&&(rua.ativo?q.pos.distanceTo(camera.position)<350:dCam<1800)&&projeta(q.pos,q.el);
       q.el.style.display=ok?"":"none";
     }
     for(const q of avioes.values()){

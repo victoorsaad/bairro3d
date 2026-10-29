@@ -8,13 +8,20 @@ Fontes:
   bike   Bike Itaú (Tembici), GBFS público: estações a até anel_m do centro, com bicicletas e vagas livres
   voos   adsb.lol (ADS-B comunitário, ODbL): aviões num raio de 25 milhas náuticas
   clima  Open-Meteo (CC BY 4.0): tempo agora em Pinheiros
+  transito  TomTom (chave do plano grátis em TOMTOM_KEY): velocidade relativa por trecho (tiles "flow relative", zoom 14,
+            3×3 em volta do centro) + interdições, acidentes e obras. 5 min de cache: ~2,6 mil tiles e 288 consultas por
+            dia, longe dos limites grátis (50 mil tiles, 2,5 mil consultas)
 """
+import concurrent.futures
 import json
 import math
 import os
 import threading
 import time
+import urllib.parse
 import urllib.request
+
+import mvt
 
 CONFIG = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json"), encoding="utf-8"))
 LAT, LON = CONFIG["lat"], CONFIG["lon"]
@@ -22,10 +29,10 @@ UA = "bairro3d/1.0 (+https://bairro3d.saadcloud.com.br)"
 GBFS = "https://saopaulo.publicbikesystem.net/customer/gbfs/v2/pt/"
 
 
-def baixar(url, timeout=8):
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+def baixar(url, timeout=8, binario=False):
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*" if binario else "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.load(r)
+        return r.read() if binario else json.load(r)
 
 
 def metros(lat, lon):
@@ -84,7 +91,64 @@ def clima():
             "chuva_prob_6h": max(d.get("hourly", {}).get("precipitation_probability") or [0])}
 
 
-FONTES = {"bike": (bike, 60), "voos": (voos, 10), "clima": (clima, 600)}
+TIPO_INC = {1: "acidente", 2: "neblina", 3: "perigo", 4: "chuva", 5: "gelo", 7: "faixa fechada", 8: "via interditada", 9: "obra",
+            10: "vento", 11: "alagamento", 14: "veículo quebrado"}   # 6 = congestionamento, já está nas cores do trânsito
+
+
+def transito():
+    chave = os.environ.get("TOMTOM_KEY")
+    if not chave:
+        raise RuntimeError("sem TOMTOM_KEY")
+    z = 14
+    n = 2 ** z
+    lr = math.radians(LAT)
+    tx0, ty0 = int((LON + 180) / 360 * n), int((1 - math.log(math.tan(lr) + 1 / math.cos(lr)) / math.pi) / 2 * n)
+    lim = CONFIG["anel_m"] + 50
+    linhas = []
+    tiles = [(tx0 + dx, ty0 + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)]
+    with concurrent.futures.ThreadPoolExecutor(9) as ex:
+        brutos = list(ex.map(lambda t: baixar("https://api.tomtom.com/traffic/map/4/tile/flow/relative/%d/%d/%d.pbf?key=%s" % (z, t[0], t[1], chave), binario=True), tiles))
+    for (tx, ty), dados in zip(tiles, brutos):
+        ext, feats = mvt.ler(dados).get("Traffic flow", (4096, []))
+        for props, geo in feats:
+            nivel = props.get("traffic_level")
+            if not isinstance(nivel, (int, float)) or nivel < 0:
+                continue
+            larga = any(k in (props.get("road_type") or "") for k in ("Major road", "Secondary", "International", "Major local", "Connecting"))
+            for anel in geo:
+                p = []
+                for x, y in anel:
+                    lon = (tx + x / ext) / n * 360 - 180
+                    lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * (ty + y / ext) / n))))
+                    if math.hypot(*metros(lat, lon)) > lim:
+                        if len(p) >= 4:
+                            linhas.append({"n": round(nivel, 2), "w": 1 if larga else 0, "f": bool(props.get("road_closure")), "p": p})
+                        p = []
+                        continue
+                    p += [round(lat, 5), round(lon, 5)]
+                if len(p) >= 4:
+                    linhas.append({"n": round(nivel, 2), "w": 1 if larga else 0, "f": bool(props.get("road_closure")), "p": p})
+    dlat, dlon = CONFIG["anel_m"] / 110574, CONFIG["anel_m"] / (111320 * math.cos(lr))
+    campos = "{incidents{type,geometry{type,coordinates},properties{iconCategory,magnitudeOfDelay,events{description},startTime,endTime,from,to,length,delay}}}"
+    inc = baixar("https://api.tomtom.com/traffic/services/5/incidentDetails?key=%s&bbox=%f,%f,%f,%f&language=pt-PT&timeValidityFilter=present&fields=%s"
+                 % (chave, LON - dlon, LAT - dlat, LON + dlon, LAT + dlat, urllib.parse.quote(campos)))
+    incidentes = []
+    for i in inc.get("incidents") or []:
+        pr, g = i["properties"], i["geometry"]
+        tipo = TIPO_INC.get(pr.get("iconCategory"))
+        if not tipo:
+            continue
+        cs = g["coordinates"] if g["type"] == "LineString" else [g["coordinates"]] if g["type"] == "Point" else [c for l in g["coordinates"] for c in l]
+        lon, lat = cs[len(cs) // 2]
+        if math.hypot(*metros(lat, lon)) > CONFIG["anel_m"]:
+            continue
+        incidentes.append({"tipo": tipo, "lat": lat, "lon": lon, "linha": [round(v, 6) for c in cs for v in (c[1], c[0])] if len(cs) > 1 else [],
+                           "de": pr.get("from") or "", "ate": pr.get("to") or "", "desc": " · ".join(e["description"] for e in pr.get("events") or [] if e.get("description")),
+                           "inicio": pr.get("startTime"), "fim": pr.get("endTime"), "atraso": pr.get("delay"), "metros": pr.get("length")})
+    return {"fonte": "TomTom", "linhas": linhas, "incidentes": incidentes}
+
+
+FONTES = {"bike": (bike, 60), "voos": (voos, 10), "clima": (clima, 600), "transito": (transito, 300)}
 _cache = {}
 _travas = {k: threading.Lock() for k in FONTES}
 
