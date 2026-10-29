@@ -36,7 +36,7 @@
     } catch (e) {}
   })();
 </script>
-<link rel="stylesheet" href="assets/app.css?v=5">
+<link rel="stylesheet" href="assets/app.css?v=6">
 </head>
 <body>
 <header class="bar">
@@ -92,6 +92,13 @@
             <button id="btNoite" aria-pressed="false"><span lang="pt">Noite</span><span lang="en">Night</span></button>
             <button id="btRua" aria-pressed="false"><span lang="pt">Na rua</span><span lang="en">Street level</span></button>
             <button id="btGirar" aria-pressed="false"><span lang="pt">Girar</span><span lang="en">Orbit</span></button>
+          </div>
+          <b><span lang="pt">Lente</span><span lang="en">Lens</span></b>
+          <div class="seg lentes" id="segEstilo" role="group" aria-label="Lente / Lens">
+            <button data-e="normal" aria-pressed="true">Normal</button><button data-e="nvg" aria-pressed="false"><span lang="pt">Noturna</span><span lang="en">NVG</span></button><button data-e="termica" aria-pressed="false"><span lang="pt">Térmica</span><span lang="en">Thermal</span></button><button data-e="noir" aria-pressed="false">Noir</button><button data-e="crt" aria-pressed="false">CRT</button>
+          </div>
+          <div class="fgrid" style="margin-top:6px">
+            <button id="btLink" aria-pressed="false"><span lang="pt">Copiar link desta vista</span><span lang="en">Copy link to this view</span></button>
           </div>
         </div>
         <button id="btFiltros" class="btFiltros" aria-expanded="false" aria-controls="filtros"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span lang="pt">Camadas</span><span lang="en">Layers</span><span class="nf" id="nFiltros"></span></button>
@@ -191,6 +198,6 @@
   </div>
 </footer>
 
-<script type="module" src="assets/app.js?v=5"></script>
+<script type="module" src="assets/app.js?v=6"></script>
 </body>
 </html>

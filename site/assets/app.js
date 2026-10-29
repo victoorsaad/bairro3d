@@ -1855,6 +1855,65 @@ const aoVivo=(()=>{
   } };
 })();
 
+// ---------- estilos de lente (pós-processamento): visão noturna, térmica, noir e CRT ----------
+const estilos=(()=>{
+  const rt=new THREE.WebGLRenderTarget(2,2,{samples:MODESTO?0:4});
+  rt.texture.colorSpace=THREE.SRGBColorSpace;
+  const mat=new THREE.ShaderMaterial({uniforms:{tex:{value:rt.texture},modo:{value:0},t:{value:0},res:{value:new THREE.Vector2(1,1)}},
+    vertexShader:"varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }",
+    fragmentShader:`uniform sampler2D tex; uniform int modo; uniform float t; uniform vec2 res; varying vec2 vUv;
+      float rnd(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233))+t)*43758.5453); }
+      vec3 ferro(float x){   // "ironbow": azul-escuro → roxo → vermelho → laranja → amarelo → branco
+        vec3 a=mix(vec3(.02,.01,.12),vec3(.45,.05,.55),smoothstep(0.,.3,x)); a=mix(a,vec3(.9,.15,.15),smoothstep(.25,.5,x));
+        a=mix(a,vec3(1.,.55,.05),smoothstep(.45,.7,x)); a=mix(a,vec3(1.,.92,.3),smoothstep(.65,.88,x)); return mix(a,vec3(1.),smoothstep(.88,1.,x)); }
+      void main(){
+        vec2 uv=vUv; vec3 c=texture2D(tex,uv).rgb; float l=dot(c,vec3(.299,.587,.114)); float v=1.-smoothstep(.45,.95,length(uv-.5)*1.25);
+        vec3 o=c;
+        if(modo==1){ float g=pow(l,.7)*1.35+(rnd(uv*res)-.5)*.16; o=vec3(.12,1.,.25)*g*v; }
+        else if(modo==2){ float x=clamp(pow(l,1.4)*1.15,0.,1.); o=ferro(x)*(.85+.15*v); }
+        else if(modo==3){ float g=smoothstep(.0,.85,pow(l,.8)); g=g*g*(3.-2.*g); o=vec3(g+(rnd(uv*res)-.5)*.08)*(.55+.45*v); }
+        else if(modo==4){ vec2 d=vec2(1.5/res.x,0.); o=vec3(texture2D(tex,uv+d).r,c.g,texture2D(tex,uv-d).b);
+          o*=.82+.18*sin(uv.y*res.y*1.6); o=pow(o,vec3(.9))*vec3(.95,1.05,.98)*(.6+.4*v)+.03*(rnd(vec2(t))-.5); }
+        gl_FragColor=vec4(o,1.);
+      }`,depthTest:false,depthWrite:false});
+  const quad=new THREE.Mesh(new THREE.PlaneGeometry(2,2),mat), cenaQ=new THREE.Scene(), camQ=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+  quad.frustumCulled=false; cenaQ.add(quad);
+  const NOMES=["normal","nvg","termica","noir","crt"];
+  let modo=0;
+  const seg=document.getElementById("segEstilo");
+  function liga(m){ modo=Math.max(0,NOMES.indexOf(m)); mat.uniforms.modo.value=modo; palco.classList.toggle("lente",modo>0);
+    seg.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.e===NOMES[modo]));
+    try{ localStorage.setItem("bairro3d-estilo",NOMES[modo]); }catch(e){} }
+  seg.addEventListener("click",e=>{ const b=e.target.closest("button[data-e]"); if(b) liga(b.dataset.e); });
+  try{ liga(localStorage.getItem("bairro3d-estilo")||"normal"); }catch(e){ liga("normal"); }
+  return { liga, get nome(){ return NOMES[modo]; },
+    render(agora){
+      if(!modo){ renderer.render(scene,camera); return; }
+      const s=renderer.getDrawingBufferSize(new THREE.Vector2());
+      if(rt.width!==s.x||rt.height!==s.y){ rt.setSize(s.x,s.y); mat.uniforms.res.value.copy(s); }
+      mat.uniforms.t.value=semMovimento?0:(agora/1000)%100;
+      renderer.setRenderTarget(rt); renderer.render(scene,camera); renderer.setRenderTarget(null); renderer.render(cenaQ,camQ);
+    } };
+})();
+
+// ---------- link compartilhável: câmera, camadas ao vivo, noite e lente vão no endereço (#v=…&c=…&e=…) ----------
+const LINK=(()=>{ const h=new URLSearchParams(location.hash.slice(1)); return {v:h.get("v"),c:h.has("c")?h.get("c").split(",").filter(Boolean):null,e:h.get("e")}; })();
+function linkAtual(){
+  const r=v=>Math.round(v), p=camera.position, a=controls.target;
+  const c=[["bike","btBike"],["avioes","btAvioes"],["transito","btTransito"],["noite","btNoite"]].filter(([,id])=>document.getElementById(id)?.getAttribute("aria-pressed")==="true").map(([k])=>k);
+  const h=new URLSearchParams({v:[p.x,p.y,p.z,a.x,a.y,a.z].map(r).join(","),c:c.join(",")}); if(estilos.nome!=="normal") h.set("e",estilos.nome);
+  return location.origin+location.pathname+location.search+"#"+h.toString().replace(/%2C/g,",");
+}
+{ const bt=document.getElementById("btLink");
+  bt.onclick=async()=>{ const u=linkAtual(); history.replaceState(null,"",u);
+    let ok=false; try{ await navigator.clipboard.writeText(u); ok=true; }catch(e){}
+    if(navigator.share&&matchMedia("(pointer:coarse)").matches){ try{ await navigator.share({title:document.title,url:u}); return; }catch(e){} }
+    const t=bt.innerHTML; bt.innerHTML=ok?L("Link copiado","Link copied"):L("Link no endereço","Link in address bar"); setTimeout(()=>bt.innerHTML=t,1800); }; }
+if(LINK.v){ const n=LINK.v.split(",").map(Number); if(n.length===6&&n.every(Number.isFinite)){ camera.position.set(n[0],n[1],n[2]); controls.target.set(n[3],n[4],n[5]); anim=null; } }
+if(LINK.e) estilos.liga(LINK.e);
+if(LINK.c){ const quer=new Set(LINK.c); if(quer.has("noite")!==noiteAtual) modo(quer.has("noite"));
+  for(const [k,id] of [["bike","btBike"],["avioes","btAvioes"],["transito","btTransito"]]){ const b=document.getElementById(id); if(b&&!b.hidden&&(b.getAttribute("aria-pressed")==="true")!==quer.has(k)) b.click(); } }
+
 let tAnt=performance.now();
 renderer.setAnimationLoop(()=>{
   const agora=performance.now(), dt=Math.min(.1,(agora-tAnt)/1000); tAnt=agora;
@@ -1868,7 +1927,7 @@ renderer.setAnimationLoop(()=>{
     if(t>=1) anim=null;
   }
   if(!rua.ativo) controls.update();
-  renderer.render(scene,camera);
+  estilos.render(agora);
   rotulo.style.display=!rua.ativo&&projeta(topoC,rotulo,64)?"":"none";
   { // postos: só de perto (câmera a menos de ~1,6 km do alvo); os sem preço, só bem perto
     const dCam=camera.position.distanceTo(controls.target);
