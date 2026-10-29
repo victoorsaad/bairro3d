@@ -36,7 +36,7 @@
     } catch (e) {}
   })();
 </script>
-<link rel="stylesheet" href="assets/app.css?v=3">
+<link rel="stylesheet" href="assets/app.css?v=4">
 </head>
 <body>
 <header class="bar">
@@ -80,6 +80,11 @@
             <button id="btPreco" aria-pressed="false"><span lang="pt">Preço do m²</span><span lang="en">Price per m²</span></button>
             <button id="btCam" aria-pressed="false" aria-expanded="false"><span lang="pt">Mais camadas</span><span lang="en">More layers</span></button>
           </div>
+          <b><span lang="pt">Ao vivo</span><span lang="en">Live</span></b>
+          <div class="fgrid">
+            <button id="btBike" aria-pressed="false"><span lang="pt">Bicicletas</span><span lang="en">Bike share</span></button>
+            <button id="btAvioes" aria-pressed="false"><span lang="pt">Aviões</span><span lang="en">Aircraft</span></button>
+          </div>
           <b><span lang="pt">Vista</span><span lang="en">View</span></b>
           <div class="fgrid">
             <button id="btSol" aria-pressed="false"><span lang="pt">Sol e sombra</span><span lang="en">Sun and shade</span></button>
@@ -90,6 +95,7 @@
         </div>
         <button id="btFiltros" class="btFiltros" aria-expanded="false" aria-controls="filtros"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span lang="pt">Camadas</span><span lang="en">Layers</span><span class="nf" id="nFiltros"></span></button>
       </div>
+      <div class="clima" id="clima" hidden></div>
       <div class="bussola" title="N"><svg viewBox="0 0 30 30" aria-hidden="true"><g id="agulha"><path d="M15 3l4 12h-8z" fill="#c2412d"/><path d="M15 27l-4-12h8z" fill="#9aa3a0"/></g></svg></div>
       <button class="casa" id="btCasa" aria-label="Voltar ao centro / Back to centre" title="Centro / Centre"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
       <div class="cartao-sol" id="cartaoSol" hidden>
@@ -133,6 +139,11 @@
       <p class="sub" id="postosInfo"></p>
       <div class="lista" id="postosLista"></div>
     </div>
+    <div class="cartao" id="cartaoAvioes" hidden>
+      <h2><span lang="pt">Aviões agora</span><span lang="en">Aircraft now</span></h2>
+      <p class="sub"><span lang="pt">Num raio de 46 km, do mais perto ao mais longe. Toque para voar até ele.</span><span lang="en">Within 46 km, nearest first. Tap to fly to it.</span></p>
+      <div class="lista" id="avioesLista"></div>
+    </div>
     <div class="cartao" id="cartaoDestaques" hidden>
       <h2><span lang="pt">Lugares conhecidos</span><span lang="en">Landmarks</span></h2>
       <div class="lista" id="destaquesLista"></div>
@@ -142,11 +153,11 @@
   <section class="wrap sobre">
     <h2><span lang="pt">Como foi feito</span><span lang="en">How it was made</span></h2>
     <div lang="pt">
-      <p>Tudo aqui vem de bases públicas e abertas, baixadas e processadas por um pipeline em Python e desenhadas no navegador com three.js. Nenhuma chave de API, nenhum serviço pago, nenhum rastreador: a página e os dados são arquivos estáticos.</p>
+      <p>Tudo aqui vem de bases públicas e abertas, baixadas e processadas por um pipeline em Python e desenhadas no navegador com three.js. As camadas ao vivo (bicicletas, aviões e o tempo) o próprio servidor busca nas fontes abertas e guarda em cache por alguns segundos; o navegador não fala com mais ninguém. Nenhum serviço pago, nenhum rastreador.</p>
       <p>Preços e ocorrências aparecem só agregados: o ITBI por quadra (mediana do m², com mínimo de vendas), os crimes em células de 100 m (com mínimo de ocorrências). Nenhuma transação, boletim ou endereço individual é publicado.</p>
     </div>
     <div lang="en">
-      <p>Everything here comes from public, open datasets, downloaded and processed by a Python pipeline and drawn in the browser with three.js. No API keys, no paid services, no trackers: the page and its data are static files.</p>
+      <p>Everything here comes from public, open datasets, downloaded and processed by a Python pipeline and drawn in the browser with three.js. The live layers (bike share, aircraft and the weather) are fetched by the site's own server from open sources and cached for a few seconds; the browser talks to no one else. No paid services, no trackers.</p>
       <p>Prices and crime are shown only in aggregate: property-transfer tax records (ITBI) per city block (median price per m², with a minimum number of sales) and police reports in 100 m cells (with a minimum count). No individual sale, report or address is published.</p>
     </div>
   </section>
@@ -162,6 +173,9 @@
       <li><b>Prefeitura de São Paulo · dados abertos</b> — <span lang="pt">Aprova Digital (SMUL, pedidos de alvará) e guias de ITBI pagas (Secretaria da Fazenda), agregadas por quadra.</span><span lang="en">Aprova Digital (building permit requests) and paid ITBI property-transfer tax records (Finance Department), aggregated per block.</span> <a href="https://dados.prefeitura.sp.gov.br" rel="noopener">dados.prefeitura.sp.gov.br</a></li>
       <li><b>SSP-SP</b> — <span lang="pt">dados criminais com local, últimos 12 meses, agregados em células de 100 m.</span><span lang="en">geolocated crime records, last 12 months, aggregated into 100 m cells.</span> <a href="https://www.ssp.sp.gov.br/estatistica/consultas" rel="noopener">ssp.sp.gov.br</a></li>
       <li><b>ANP</b> — <span lang="pt">levantamento semanal de preços de combustíveis (amostra de postos).</span><span lang="en">weekly fuel price survey (a sample of stations).</span> <a href="https://www.gov.br/anp/pt-br/assuntos/precos-e-defesa-da-concorrencia/precos/levantamento-de-precos-de-combustiveis-ultimas-semanas-pesquisadas" rel="noopener">gov.br/anp</a></li>
+      <li><b>Bike Itaú (Tembici)</b> — <span lang="pt">estações e bicicletas livres, ao vivo (GBFS público).</span><span lang="en">stations and available bikes, live (public GBFS feed).</span> <a href="https://bikeitau.com.br" rel="noopener">bikeitau.com.br</a></li>
+      <li><b>adsb.lol</b> — <span lang="pt">posição de aviões por ADS-B, ao vivo.</span><span lang="en">live aircraft positions from ADS-B.</span> <a href="https://adsb.lol" rel="noopener">adsb.lol</a>, ODbL.</li>
+      <li><b>Open-Meteo</b> — <span lang="pt">o tempo agora em Pinheiros.</span><span lang="en">current weather in Pinheiros.</span> <a href="https://open-meteo.com" rel="noopener">open-meteo.com</a>, CC BY 4.0.</li>
       <li><b>Copernicus DEM GLO-30</b> — <span lang="pt">relevo além da maquete.</span><span lang="en">terrain beyond the model.</span> © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA.</li>
       <li><b>three.js</b> 0.169.0 (MIT) — <span lang="pt">desenho 3D no navegador.</span><span lang="en">3D rendering in the browser.</span></li>
     </ul>
@@ -170,6 +184,6 @@
   </div>
 </footer>
 
-<script type="module" src="assets/app.js?v=3"></script>
+<script type="module" src="assets/app.js?v=4"></script>
 </body>
 </html>

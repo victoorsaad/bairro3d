@@ -1686,12 +1686,131 @@ const projeta=(pos,el,margemTopo=60)=>{ const w=pos.clone().project(camera);
   const ok=w.z<1&&Math.abs(w.x)<1.02&&Math.abs(w.y)<1.02&&(1-w.y)/2*palco.clientHeight>margemTopo;
   if(ok){ el.style.left=`${(w.x+1)/2*palco.clientWidth}px`; el.style.top=`${(1-w.y)/2*palco.clientHeight}px`; }
   return ok; };
+// ---------- ao vivo: bicicletas do Bike Itaú, aviões (ADS-B) e o tempo agora (o servidor busca e guarda em cache: /api/*) ----------
+const aoVivo=(()=>{
+  const kx=B.meta.m_por_grau.lon, ky=B.meta.m_por_grau.lat, o=B.meta.origem, base=RM?.base_altitude||0;
+  const xy=(lat,lon)=>[(lon-o.lon)*kx,(lat-o.lat)*ky];
+  const api=f=>fetch("api/"+f).then(r=>r.ok?r.json():null).catch(()=>null);
+  const visivel=()=>document.visibilityState==="visible";
+  const salvo=(k,pad)=>{ try{ const v=localStorage.getItem("bairro3d-"+k); return v==null?pad:v==="1"; }catch(e){ return pad; } };
+  const salva=(k,v)=>{ try{ localStorage.setItem("bairro3d-"+k,v?"1":"0"); }catch(e){} };
+  const hora=t=>t?new Date(t*1000).toLocaleTimeString(EN()?"en-GB":"pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Sao_Paulo"}):"";
+
+  // --- bicicletas: pílula por estação com quantas estão livres agora ---
+  const ICONE_BIKE='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="16" r="3.5"/><circle cx="18" cy="16" r="3.5"/><path d="M6 16l4-7h5l3 7M10 9l-1.5-3H6M15 9l-2 7H6"/></svg>';
+  const btBike=document.getElementById("btBike"), estacoes=new Map();
+  let verBike=salvo("bike",false), tBike=0;
+  const corBike=e=>!e.ok?"#6b7280":e.b===0?"#dc2626":e.b<3?"#d97706":"#16a34a";
+  const htmlBike=e=>`<b>${esc(e.n)}</b><div class="tipo"><i style="background:${corBike(e)}"></i>Bike Itaú · ${dist(Math.hypot(...xy(e.lat,e.lon)))} ${DO_C}</div>
+    ${e.ok?`<dl class="precos"><dt>${L("Bicicletas livres","Bikes available")}</dt><dd>${e.b}</dd><dt>${L("Elétricas","E-bikes")}</dt><dd>${e.e}</dd><dt>${L("Vagas para devolver","Free docks")}</dt><dd>${e.v}</dd></dl>`
+      :`<p>${L("Estação fora de operação agora.","Station not in service right now.")}</p>`}
+    ${e.end?`<p>${esc(e.end)}</p>`:""}<p class="mt">${L("Atualizado às","Updated at")} ${hora(e.t)} · ${L("dados ao vivo","live data")}</p>`;
+  async function bike(){
+    const D=await api("bike"); tBike=performance.now(); if(!D) return;
+    for(const e of D.estacoes){
+      let q=estacoes.get(e.id);
+      if(!q){
+        const [x,y]=xy(e.lat,e.lon), h0=hZ(x,-y), el=document.createElement("button"); el.type="button"; el.className="posto bike"; el.style.display="none";
+        palco.appendChild(el); q={el,pos:new THREE.Vector3(x,h0+4,-y),topo:new THREE.Vector3(x,h0+14,-y)};
+        el.addEventListener("click",()=>abrirBalao(q.topo,htmlBike(q.e))); estacoes.set(e.id,q);
+      }
+      q.e=e; q.el.innerHTML=ICONE_BIKE+(e.ok?e.b:"—"); q.el.style.setProperty("--c",corBike(e));
+      q.el.setAttribute("aria-label",`${e.n}: ${e.b} ${T("bicicletas livres","bikes available")}`);
+    }
+  }
+  btBike.setAttribute("aria-pressed",verBike);
+  btBike.onclick=()=>{ verBike=!verBike; btBike.setAttribute("aria-pressed",verBike); salva("bike",verBike); if(verBike&&!estacoes.size) bike(); };
+
+  // --- aviões: malha simples na altitude real + pílula com o voo; entre leituras, segue rumo e velocidade ---
+  const btAvioes=document.getElementById("btAvioes"), avioes=new Map(), grupoAv=new THREE.Group(); scene.add(grupoAv);
+  let verAv=salvo("avioes",false), tAv=0;
+  const geoAv=(()=>{ const f=new THREE.CylinderGeometry(2,1.4,38,8); f.rotateX(Math.PI/2);
+    const a=new THREE.BoxGeometry(34,.8,6), c=new THREE.BoxGeometry(12,.6,3.5); c.translate(0,0,16); const l=new THREE.BoxGeometry(.6,7,4); l.translate(0,3.5,17);
+    return mergeGeometries([f.toNonIndexed(),a.toNonIndexed(),c.toNonIndexed(),l.toNonIndexed()]); })();
+  const matAv=new THREE.MeshLambertMaterial({color:0xf8fafc,emissive:0x334155});
+  const alt=m=>L(`${Math.round(m).toLocaleString("pt-BR")} m`,`${Math.round(m/.3048).toLocaleString("en-US")} ft`);
+  const htmlAv=a=>`<b>${esc(a.voo||a.reg||a.hex)}</b><div class="tipo"><i style="background:#0ea5e9"></i>${esc([a.tipo,a.reg].filter(Boolean).join(" · ")||T("Aeronave","Aircraft"))}</div>
+    <dl class="precos"><dt>${L("Altitude","Altitude")}</dt><dd>${alt(a.alt)}</dd><dt>${L("Velocidade","Speed")}</dt><dd>${Math.round(a.vel*3.6)} km/h</dd>
+    <dt>${L("Rumo","Heading")}</dt><dd>${Math.round(a.rumo??0)}°</dd><dt>${L("Distância","Distance")}</dt><dd>${dist(Math.hypot(...xy(a.lat,a.lon)))}</dd></dl>
+    <p>${a.sobe>1?L("Subindo","Climbing"):a.sobe<-1?L("Descendo","Descending"):L("Nível","Level")}${a.voo?` · <a href="https://globe.adsb.lol/?icao=${esc(a.hex)}" target="_blank" rel="noopener">adsb.lol</a>`:""}</p>`;
+  async function voos(){
+    const D=await api("voos"); tAv=performance.now(); if(!D) return;
+    const vistos=new Set();
+    for(const a of D.avioes){
+      vistos.add(a.hex); let q=avioes.get(a.hex);
+      const [x,y]=xy(a.lat,a.lon), p=new THREE.Vector3(x,Math.max(60,a.alt-base),-y);
+      if(!q){
+        const m=new THREE.Mesh(geoAv,matAv); m.scale.setScalar(3); grupoAv.add(m);
+        const el=document.createElement("button"); el.type="button"; el.className="posto aviao"; el.style.display="none"; palco.appendChild(el);
+        q={m,el,pos:p.clone()}; el.addEventListener("click",()=>irAoAviao(q)); avioes.set(a.hex,q);
+      }
+      if(q.pos.distanceTo(p)>3000) q.pos.copy(p);   // salto grande (avião novo ou leitura velha): sem deslizar pelo céu
+      q.alvo=p; q.a=a;
+      q.el.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2 7 7 4v2l-7-2-1 5 3 2v2l-4-1-4 1v-2l3-2-1-5-7 2v-2l7-4z"/></svg>${esc(a.voo||a.reg||a.hex)}`;
+      q.el.setAttribute("aria-label",`${a.voo||a.hex}, ${Math.round(a.alt)} m`);
+    }
+    for(const [k,q] of avioes) if(!vistos.has(k)){ grupoAv.remove(q.m); q.el.remove(); avioes.delete(k); }
+    const lista=[...avioes.values()].map(q=>[Math.hypot(q.pos.x,q.pos.z),q]).sort((a,b)=>a[0]-b[0]);
+    listaAv.innerHTML=lista.map(([d,q])=>`<button type="button" data-hex="${esc(q.a.hex)}" style="--c:#0369a1"><i></i><b>${esc(q.a.voo||q.a.reg||q.a.hex)}</b><span>${esc(q.a.tipo||"")} · ${dist(d)} · ${q.a.sobe>1?L("subindo","climbing"):q.a.sobe<-1?L("descendo","descending"):L("nível","level")}</span><em>${alt(q.a.alt)}</em></button>`).join("")
+      ||`<p>${L("Nenhum avião no raio agora.","No aircraft in range right now.")}</p>`;
+  }
+  function irAoAviao(q){ const v=q.pos.clone(), d=camera.position.clone().sub(v).setY(0); if(d.lengthSq()<1) d.set(0,0,1); d.normalize();
+    voarPara(v.clone().add(d.multiplyScalar(900)).setY(v.y+250),v); setTimeout(()=>abrirBalao(q.pos,htmlAv(q.a)),1450); }
+  const listaAv=document.getElementById("avioesLista"), cartaoAv=document.getElementById("cartaoAvioes");
+  listaAv.addEventListener("click",e=>{ const b=e.target.closest("button[data-hex]"); const q=b&&avioes.get(b.dataset.hex); if(q){ irAoAviao(q); palco.scrollIntoView({behavior:"smooth",block:"center"}); } });
+  btAvioes.setAttribute("aria-pressed",verAv);
+  btAvioes.onclick=()=>{ verAv=!verAv; btAvioes.setAttribute("aria-pressed",verAv); salva("avioes",verAv); grupoAv.visible=verAv; cartaoAv.hidden=!verAv; if(verAv) voos(); };
+  grupoAv.visible=verAv; cartaoAv.hidden=!verAv;
+
+  // --- tempo agora: selo no canto da maquete; com chuva, cai chuva na cena ---
+  const selo=document.getElementById("clima");
+  const WMO=c=>c===0?["Céu limpo","Clear sky"]:c<=2?["Poucas nuvens","Partly cloudy"]:c===3?["Nublado","Overcast"]:c<=48?["Neblina","Fog"]:c<=57?["Garoa","Drizzle"]:
+    c<=67?["Chuva","Rain"]:c<=77?["Neve","Snow"]:c<=82?["Pancadas de chuva","Rain showers"]:["Tempestade","Thunderstorm"];
+  const chuva=(()=>{ const n=MODESTO?2500:7000, p=new Float32Array(n*3);
+    for(let i=0;i<n;i++){ p[i*3]=(Math.random()-.5)*1600; p[i*3+1]=Math.random()*700; p[i*3+2]=(Math.random()-.5)*1600; }
+    const g=new THREE.BufferGeometry(); g.setAttribute("position",new THREE.BufferAttribute(p,3));
+    const pts=new THREE.Points(g,new THREE.PointsMaterial({color:0xaabbd0,size:1.6,transparent:true,opacity:.55,depthWrite:false}));
+    pts.visible=false; pts.frustumCulled=false; scene.add(pts); return pts; })();
+  let C_=null;
+  async function clima(){
+    C_=await api("clima"); if(!C_){ selo.hidden=true; return; }
+    const [pt,en]=WMO(C_.codigo);
+    selo.innerHTML=`<b>${Math.round(C_.temp)}°</b><span>${L(pt,en)}${C_.chuva_prob_6h>=50&&C_.chuva_mm===0?L(` · ${C_.chuva_prob_6h}% de chuva até ${6}h`,` · ${C_.chuva_prob_6h}% rain in 6h`):""}</span>`;
+    selo.title=T(`Agora em Pinheiros (Open-Meteo, ${C_.hora.slice(11)}): sensação ${Math.round(C_.sensacao)}°, umidade ${C_.umidade}%, vento ${Math.round(C_.vento_kmh)} km/h`,
+      `Now in Pinheiros (Open-Meteo, ${C_.hora.slice(11)}): feels like ${Math.round(C_.sensacao)}°, humidity ${C_.umidade}%, wind ${Math.round(C_.vento_kmh)} km/h`);
+    selo.hidden=false; chuva.visible=!semMovimento&&C_.chuva_mm>0;
+  }
+  aoTrocarIdioma.push(()=>{ if(C_) clima(); for(const q of estacoes.values()) q.el.setAttribute("aria-label",`${q.e.n}: ${q.e.b} ${T("bicicletas livres","bikes available")}`); });
+  clima(); setInterval(()=>{ if(visivel()) clima(); },10*60e3);
+  if(verBike) bike(); if(verAv) voos();
+
+  return { quadro(dt,agora){
+    if(verBike&&visivel()&&agora-tBike>60e3) bike();
+    if(verAv&&visivel()&&agora-tAv>10e3) voos();
+    const dCam=camera.position.distanceTo(controls.target);
+    for(const q of estacoes.values()){
+      const ok=verBike&&(rua.ativo?q.pos.distanceTo(camera.position)<350:dCam<1600)&&projeta(q.pos,q.el);
+      q.el.style.display=ok?"":"none";
+    }
+    for(const q of avioes.values()){
+      const a=q.a, r=(a.rumo??0)*Math.PI/180;
+      if(!semMovimento){ q.alvo.x+=Math.sin(r)*a.vel*dt; q.alvo.z-=Math.cos(r)*a.vel*dt; q.alvo.y+=a.sobe*dt; }
+      q.pos.lerp(q.alvo,Math.min(1,dt*1.5)); q.m.position.copy(q.pos); q.m.rotation.y=-r;
+      q.el.style.display=verAv&&projeta(q.pos,q.el,40)?"":"none";
+    }
+    if(chuva.visible){ const a=chuva.geometry.attributes.position, v=a.array;
+      for(let i=1;i<v.length;i+=3){ v[i]-=dt*220; if(v[i]<0) v[i]+=700; } a.needsUpdate=true;
+      chuva.position.set(camera.position.x,Math.max(0,camera.position.y-500),camera.position.z); }
+  } };
+})();
+
 let tAnt=performance.now();
 renderer.setAnimationLoop(()=>{
   const agora=performance.now(), dt=Math.min(.1,(agora-tAnt)/1000); tAnt=agora;
   solQuadro(agora); camadasQuadro(); chunks.quadro(agora); futuroQuadro(agora);
   if(carros&&!semMovimento) carros.passo(dt);
   rua.quadro(dt);
+  aoVivo.quadro(dt,agora);
   if(anim){
     const t=Math.max(0,Math.min(1,(agora-anim.t0)/anim.dur)), k=ease(t);
     camera.position.lerpVectors(anim.p0,anim.p1,k); controls.target.lerpVectors(anim.a0,anim.a1,k);

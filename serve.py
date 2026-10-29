@@ -7,6 +7,7 @@ Serve só o que está na allowlist:
   /data/<x>.json|<x>.bin    -> dados gerados pelo pipeline
   /data/chunks/<c>.json     -> pedaços do anel carregados perto da câmera
   /robots.txt, /sitemap.xml, /og.jpg -> indexação e prévia de link
+  /api/<fonte>              -> dados ao vivo (aovivo.py): o servidor busca na fonte, recorta o raio e guarda em cache
 Qualquer outra coisa (diretórios, dotfiles, .py, caminhos com ..) é 404.
 
 Bind padrão em 127.0.0.1: só a própria máquina acessa até a revisão. Para expor (túnel, proxy),
@@ -20,6 +21,8 @@ import os
 import re
 import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+import aovivo
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "site")
 
@@ -65,6 +68,33 @@ class Handler(SimpleHTTPRequestHandler):
     extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".json": "application/json",
                       ".bin": "application/octet-stream", ".js": "text/javascript", ".woff2": "font/woff2"}
 
+    def do_GET(self):
+        p = self.path.split("?", 1)[0]
+        if p.startswith("/api/"):
+            return self.api(p[5:], corpo=True)
+        return super().do_GET()
+
+    def do_HEAD(self):
+        p = self.path.split("?", 1)[0]
+        if p.startswith("/api/"):
+            return self.api(p[5:], corpo=False)
+        return super().do_HEAD()
+
+    def api(self, fonte, corpo):
+        r = aovivo.pegar(fonte)
+        if r is None:
+            return self.send_error(404)
+        dados, idade, ttl = r
+        if dados is None:
+            return self.send_error(503, "fonte fora do ar")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(dados)))
+        self.send_header("X-Idade", str(int(idade)))
+        self.end_headers()
+        if corpo:
+            self.wfile.write(dados)
+
     def do_POST(self):
         self.send_error(405)
 
@@ -84,7 +114,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         p = self.path.split("?", 1)[0]
-        if p.startswith("/assets/vendor/") or p.startswith("/assets/fonts/"):
+        if p.startswith("/api/"):
+            self.send_header("Cache-Control", "public, max-age=%d" % aovivo.ttl(p[5:]))
+        elif p.startswith("/assets/vendor/") or p.startswith("/assets/fonts/"):
             self.send_header("Cache-Control", "public, max-age=604800, immutable")
         elif p.startswith("/assets/") or p.startswith("/data/"):
             self.send_header("Cache-Control", "public, max-age=3600")

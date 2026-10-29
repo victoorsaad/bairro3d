@@ -2,7 +2,7 @@
 
 Maquete 3D de Pinheiros, em São Paulo, num raio de 1 km em volta do Largo da Batata, feita só com dados abertos. [English below](#english)
 
-Prédios, árvores e relevo; zoneamento, manchas de alagamento, transporte, preço do m² (ITBI) e ocorrências criminais, tudo desenhado no navegador com three.js. Sem chave de API, sem serviço pago, sem rastreador: a página e os dados são arquivos estáticos.
+Prédios, árvores e relevo; zoneamento, manchas de alagamento, transporte, preço do m² (ITBI) e ocorrências criminais, tudo desenhado no navegador com three.js. Sem serviço pago e sem rastreador. A maquete é estática; as camadas ao vivo (bicicletas do Bike Itaú, aviões por ADS-B e o tempo agora) o `serve.py` busca nas fontes abertas e guarda em cache (`aovivo.py`), então o navegador só fala com o próprio site.
 
 ## Partes
 
@@ -12,6 +12,7 @@ Prédios, árvores e relevo; zoneamento, manchas de alagamento, transporte, pre�
 | `pipeline/` | Baixa e processa as bases (`rodar.sh` roda tudo em ordem). |
 | `site/` | A página estática (`index.html`, `assets/`); os dados gerados vão em `site/data/`. |
 | `serve.py` | Servidor estático com allowlist, CSP e cabeçalhos de segurança. |
+| `aovivo.py` | Camadas ao vivo em `/api/<fonte>`: busca na fonte, recorta o raio e guarda em cache. |
 | `servidor/` | Unit systemd endurecida de exemplo. |
 
 ## Rodando
@@ -28,7 +29,7 @@ O download inicial tem ~700 MB (planilhas do ITBI e da SSP, Overture, relevo). L
 Preços e crimes saem só agregados. O ITBI vira mediana do m² por quadra, e quadras com menos de 5 vendas em 24 meses ficam de fora. Os boletins da SSP viram contagens em células de 100 m, e células com menos de 3 ocorrências somem. Nenhuma transação, boletim, nome ou endereço individual é publicado.
 
 ## Fontes
-© OpenStreetMap contributors (ODbL) · Overture Maps Foundation (ODbL) · Prefeitura de São Paulo: GeoSampa e dados.prefeitura.sp.gov.br · SSP-SP · ANP · Copernicus DEM GLO-30 (© DLR e.V. 2010-2014 e © Airbus Defence and Space GmbH 2014-2018, sob o programa COPERNICUS da União Europeia e da ESA) · three.js (MIT).
+© OpenStreetMap contributors (ODbL) · Overture Maps Foundation (ODbL) · Prefeitura de São Paulo: GeoSampa e dados.prefeitura.sp.gov.br · SSP-SP · ANP · Bike Itaú/Tembici (GBFS) · adsb.lol (ODbL) · Open-Meteo (CC BY 4.0) · Copernicus DEM GLO-30 (© DLR e.V. 2010-2014 e © Airbus Defence and Space GmbH 2014-2018, sob o programa COPERNICUS da União Europeia e da ESA) · three.js (MIT).
 
 Projeto pessoal e educacional, sem afiliação com nenhum órgão público. Os preços do ITBI são valores declarados nas guias e não são avaliação de imóvel.
 
