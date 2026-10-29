@@ -20,6 +20,7 @@ import hashlib
 import os
 import re
 import sys
+import urllib.parse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import aovivo
@@ -81,6 +82,8 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_HEAD()
 
     def api(self, fonte, corpo):
+        if fonte == "foto" or fonte.startswith("foto/"):
+            return self.foto(fonte, corpo)
         r = aovivo.pegar(fonte)
         if r is None:
             return self.send_error(404)
@@ -91,6 +94,28 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(dados)))
         self.send_header("X-Idade", str(int(idade)))
+        self.end_headers()
+        if corpo:
+            self.wfile.write(dados)
+
+    def foto(self, fonte, corpo):
+        try:
+            if fonte == "foto":
+                q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                dados, tipo = aovivo.foto(float(q["lat"][0]), float(q["lon"][0])), "application/json"
+            else:
+                nome = fonte[5:]
+                dados, tipo = (aovivo.foto_img(nome[:-4]) if nome.endswith(".jpg") else None), "image/jpeg"
+        except (KeyError, ValueError):
+            return self.send_error(400)
+        except Exception as e:
+            sys.stderr.write("foto: %s\n" % e)
+            return self.send_error(503, "fonte fora do ar")
+        if dados is None:
+            return self.send_error(404)
+        self.send_response(200)
+        self.send_header("Content-Type", tipo)
+        self.send_header("Content-Length", str(len(dados)))
         self.end_headers()
         if corpo:
             self.wfile.write(dados)
@@ -114,7 +139,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         p = self.path.split("?", 1)[0]
-        if p.startswith("/api/"):
+        if p.startswith("/api/foto"):
+            self.send_header("Cache-Control", "public, max-age=86400")
+        elif p.startswith("/api/"):
             self.send_header("Cache-Control", "public, max-age=%d" % aovivo.ttl(p[5:]))
         elif p.startswith("/assets/vendor/") or p.startswith("/assets/fonts/"):
             self.send_header("Cache-Control", "public, max-age=604800, immutable")

@@ -8,11 +8,14 @@ Fontes:
   bike   Bike Itaú (Tembici), GBFS público: estações a até anel_m do centro, com bicicletas e vagas livres
   voos   adsb.lol (ADS-B comunitário, ODbL): aviões num raio de 25 milhas náuticas
   clima  Open-Meteo (CC BY 4.0): tempo agora em Pinheiros
+  foto      Mapillary (CC BY-SA 4.0, token em MAPILLARY_TOKEN): fotos de rua perto de um ponto (/api/foto?lat=&lon=) e a
+            imagem em si (/api/foto/<id>.jpg), passada pelo servidor porque a CSP só deixa carregar imagem do próprio site
   noticias  Google News (RSS público, sem chave): manchetes dos últimos 7 dias que citam Pinheiros ou o Largo da Batata
   transito  TomTom (chave do plano grátis em TOMTOM_KEY): velocidade relativa por trecho (tiles "flow relative", zoom 14,
             3×3 em volta do centro) + interdições, acidentes e obras. 5 min de cache: ~2,6 mil tiles e 288 consultas por
             dia, longe dos limites grátis (50 mil tiles, 2,5 mil consultas)
 """
+import collections
 import concurrent.futures
 import json
 import math
@@ -176,6 +179,71 @@ def noticias():
         out.append({"t": titulo, "f": fonte, "u": link, "q": quando})
     out.sort(key=lambda n: -n["q"])
     return {"fonte": "Google News", "noticias": out[:15]}
+
+
+class Lru:
+    """Cache pequeno com validade: chave -> (instante, valor); os mais antigos saem quando passa do limite."""
+    def __init__(self, maximo, ttl):
+        self.d, self.maximo, self.ttl, self.trava = collections.OrderedDict(), maximo, ttl, threading.Lock()
+
+    def get(self, k):
+        with self.trava:
+            v = self.d.get(k)
+            if v and time.time() - v[0] < self.ttl:
+                self.d.move_to_end(k)
+                return v[1]
+        return None
+
+    def put(self, k, v):
+        with self.trava:
+            self.d[k] = (time.time(), v)
+            self.d.move_to_end(k)
+            while len(self.d) > self.maximo:
+                self.d.popitem(last=False)
+
+
+_fotos, _imgs = Lru(3000, 86400), Lru(150, 6 * 3600)
+MLY = "https://graph.mapillary.com/"
+
+
+def foto(lat, lon):
+    """Até 8 fotos a no máximo ~60 m do ponto, da mais perto para a mais longe (empate: a mais nova)."""
+    chave = os.environ.get("MAPILLARY_TOKEN")
+    if not chave or not (-90 <= lat <= 90 and -180 <= lon <= 180) or math.hypot(*metros(lat, lon)) > CONFIG["anel_m"] + 300:
+        return None
+    k = (round(lat, 4), round(lon, 4))
+    r = _fotos.get(k)
+    if r is not None:
+        return r
+    d = 0.0006
+    q = urllib.parse.urlencode({"access_token": chave, "fields": "id,captured_at,compass_angle,computed_compass_angle,geometry,is_pano,creator",
+                                "bbox": "%f,%f,%f,%f" % (lon - d, lat - d, lon + d, lat + d), "limit": 200})
+    out = []
+    for x in baixar(MLY + "images?" + q, timeout=15).get("data") or []:
+        flon, flat = x["geometry"]["coordinates"]
+        dx, dy = metros(flat, flon)
+        px, py = metros(lat, lon)
+        out.append({"id": x["id"], "lat": flat, "lon": flon, "m": round(math.hypot(dx - px, dy - py), 1),
+                    "ang": x.get("computed_compass_angle") or x.get("compass_angle"), "q": x.get("captured_at", 0) // 1000,
+                    "pano": bool(x.get("is_pano")), "autor": (x.get("creator") or {}).get("username", "")})
+    out.sort(key=lambda f: (round(f["m"] / 8), -f["q"]))
+    r = json.dumps({"fonte": "Mapillary", "fotos": out[:8]}, separators=(",", ":")).encode()
+    _fotos.put(k, r)
+    return r
+
+
+def foto_img(ident):
+    chave = os.environ.get("MAPILLARY_TOKEN")
+    if not chave or not ident.isdigit() or len(ident) > 20:
+        return None
+    r = _imgs.get(ident)
+    if r is None:
+        url = baixar(MLY + ident + "?" + urllib.parse.urlencode({"access_token": chave, "fields": "thumb_1024_url"})).get("thumb_1024_url")
+        if not url or not url.startswith("https://"):
+            return None
+        r = baixar(url, timeout=15, binario=True)
+        _imgs.put(ident, r)
+    return r
 
 
 FONTES = {"noticias": (noticias, 1800), "bike": (bike, 60), "voos": (voos, 10), "clima": (clima, 600), "transito": (transito, 300)}

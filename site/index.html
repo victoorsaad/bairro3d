@@ -36,7 +36,7 @@
     } catch (e) {}
   })();
 </script>
-<link rel="stylesheet" href="assets/app.css?v=7">
+<link rel="stylesheet" href="assets/app.css?v=8">
 </head>
 <body>
 <header class="bar">
@@ -85,6 +85,7 @@
             <button id="btBike" aria-pressed="false"><span lang="pt">Bicicletas</span><span lang="en">Bike share</span></button>
             <button id="btAvioes" aria-pressed="false"><span lang="pt">Aviões</span><span lang="en">Aircraft</span></button>
             <button id="btTransito" aria-pressed="false"><span lang="pt">Trânsito</span><span lang="en">Traffic</span></button>
+            <button id="btFotos" aria-pressed="false"><span lang="pt">Fotos da rua</span><span lang="en">Street photos</span></button>
           </div>
           <b><span lang="pt">Vista</span><span lang="en">View</span></b>
           <div class="fgrid">
@@ -133,6 +134,10 @@
         <div class="cab"><b><span lang="pt">Preço do m²</span><span lang="en">Price per m²</span></b><button id="precoFechar" aria-label="Fechar / Close">×</button></div>
         <div class="corpo"></div>
       </div>
+      <div class="cartao-sol cartao-foto" id="cartaoFoto" hidden>
+        <div class="cab"><b><span lang="pt">Fotos da rua</span><span lang="en">Street photos</span></b><button id="fotoFechar" aria-label="Fechar / Close">×</button></div>
+        <div class="corpo"></div>
+      </div>
       <div class="balao" id="balao" hidden></div>
       <div class="nomeLugar" id="nomeLugar" hidden></div>
     </div>
@@ -173,11 +178,11 @@
   <section class="wrap sobre">
     <h2><span lang="pt">Como foi feito</span><span lang="en">How it was made</span></h2>
     <div lang="pt">
-      <p>Tudo aqui vem de bases públicas e abertas, baixadas e processadas por um pipeline em Python e desenhadas no navegador com three.js. As camadas ao vivo (bicicletas, aviões, trânsito e o tempo) o próprio servidor busca nas fontes abertas e guarda em cache por alguns segundos; o navegador não fala com mais ninguém. Nenhum serviço pago, nenhum rastreador.</p>
+      <p>Tudo aqui vem de bases públicas e abertas, baixadas e processadas por um pipeline em Python e desenhadas no navegador com three.js. As camadas ao vivo (bicicletas, aviões, trânsito, fotos de rua, notícias e o tempo) o próprio servidor busca nas fontes abertas e guarda em cache por alguns segundos; o navegador não fala com mais ninguém. Nenhum serviço pago, nenhum rastreador.</p>
       <p>Preços e ocorrências aparecem só agregados: o ITBI por quadra (mediana do m², com mínimo de vendas), os crimes em células de 100 m (com mínimo de ocorrências). Nenhuma transação, boletim ou endereço individual é publicado.</p>
     </div>
     <div lang="en">
-      <p>Everything here comes from public, open datasets, downloaded and processed by a Python pipeline and drawn in the browser with three.js. The live layers (bike share, aircraft, traffic and the weather) are fetched by the site's own server from open sources and cached for a few seconds; the browser talks to no one else. No paid services, no trackers.</p>
+      <p>Everything here comes from public, open datasets, downloaded and processed by a Python pipeline and drawn in the browser with three.js. The live layers (bike share, aircraft, traffic, street photos, news and the weather) are fetched by the site's own server from open sources and cached for a few seconds; the browser talks to no one else. No paid services, no trackers.</p>
       <p>Prices and crime are shown only in aggregate: property-transfer tax records (ITBI) per city block (median price per m², with a minimum number of sales) and police reports in 100 m cells (with a minimum count). No individual sale, report or address is published.</p>
     </div>
   </section>
@@ -196,6 +201,7 @@
       <li><b>Bike Itaú (Tembici)</b> — <span lang="pt">estações e bicicletas livres, ao vivo (GBFS público).</span><span lang="en">stations and available bikes, live (public GBFS feed).</span> <a href="https://bikeitau.com.br" rel="noopener">bikeitau.com.br</a></li>
       <li><b>adsb.lol</b> — <span lang="pt">posição de aviões por ADS-B, ao vivo.</span><span lang="en">live aircraft positions from ADS-B.</span> <a href="https://adsb.lol" rel="noopener">adsb.lol</a>, ODbL.</li>
       <li><b>TomTom</b> — <span lang="pt">velocidade do trânsito por trecho e interdições, ao vivo.</span><span lang="en">live traffic speed per segment and road closures.</span> © <a href="https://www.tomtom.com" rel="noopener">TomTom</a></li>
+      <li><b>Mapillary</b> — <span lang="pt">fotos de rua enviadas por colaboradores.</span><span lang="en">contributor street-level photos.</span> © <a href="https://www.mapillary.com" rel="noopener">Mapillary</a> e autores, CC BY-SA 4.0.</li>
       <li><b>Google News</b> — <span lang="pt">manchetes recentes que citam Pinheiros (cada link leva ao veículo).</span><span lang="en">recent headlines mentioning Pinheiros (each link goes to the publisher).</span></li>
       <li><b>Open-Meteo</b> — <span lang="pt">o tempo agora em Pinheiros.</span><span lang="en">current weather in Pinheiros.</span> <a href="https://open-meteo.com" rel="noopener">open-meteo.com</a>, CC BY 4.0.</li>
       <li><b>Copernicus DEM GLO-30</b> — <span lang="pt">relevo além da maquete.</span><span lang="en">terrain beyond the model.</span> © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA.</li>
@@ -206,6 +212,6 @@
   </div>
 </footer>
 
-<script type="module" src="assets/app.js?v=7"></script>
+<script type="module" src="assets/app.js?v=8"></script>
 </body>
 </html>

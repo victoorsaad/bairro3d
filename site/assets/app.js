@@ -1240,6 +1240,7 @@ renderer.domElement.addEventListener("pointerleave",()=>{ nomeLugar.hidden=true;
 renderer.domElement.addEventListener("pointerup",e=>{
   if(!baixo||Math.hypot(e.clientX-baixo[0],e.clientY-baixo[1])>(e.pointerType==="touch"?12:6)) return;   // foi arrasto, não clique
   if(rua.ativo&&rua.toque(e)) return;
+  if(fotosRua.clique(e)) return;
   const s_=bolinhaEm(e.clientX,e.clientY,e.pointerType==="touch"?30:16);
   if(s_){ mostrarLugar(s_); return; }
   const r=renderer.domElement.getBoundingClientRect();
@@ -1982,6 +1983,44 @@ const diretor=(()=>{
     camera.lookAt(controls.target);
     if(t>=1){ ativo.de={p:camera.position.clone(),a:controls.target.clone()}; ativo.i++; ativo.t0=agora; if(ativo.i>=ativo.s.length) para(); }
   }, get ativo(){ return !!ativo; } };
+})();
+
+// ---------- fotos da rua (Mapillary): com o modo ligado, toque num ponto do mapa e veja a foto de rua mais perto ----------
+const fotosRua=(()=>{
+  const bt=document.getElementById("btFotos"), cartao=document.getElementById("cartaoFoto"), corpo=cartao.querySelector(".corpo");
+  const kx=B.meta.m_por_grau.lon, ky=B.meta.m_por_grau.lat, o=B.meta.origem, rc=new THREE.Raycaster(), m2=new THREE.Vector2();
+  const seta=new THREE.Mesh(new THREE.ConeGeometry(5,14,16).rotateX(Math.PI/2).translate(0,0,-7),new THREE.MeshBasicMaterial({color:0x0ea5e9,transparent:true,opacity:.85,depthTest:false}));
+  seta.visible=false; seta.renderOrder=5; scene.add(seta);
+  let ativo=false, lista=[], i=0, pedido=0;
+  const data=q=>new Date(q*1000).toLocaleDateString(EN()?"en-GB":"pt-BR",{month:"short",year:"numeric"});
+  function mostra(){
+    const f=lista[i]; if(!f){ seta.visible=false; return; }
+    const x=(f.lon-o.lon)*kx, y=(f.lat-o.lat)*ky; seta.position.set(x,hZ(x,-y)+3,-y); seta.rotation.y=-(f.ang||0)*Math.PI/180; seta.visible=true;
+    corpo.innerHTML=`<a href="https://www.mapillary.com/app/?pKey=${f.id}" target="_blank" rel="noopener"><img src="api/foto/${f.id}.jpg" alt="${T("Foto de rua","Street photo")}" loading="lazy"></a>
+      <div class="lin"><span>${data(f.q)} · ${dist(f.m)} ${L("do ponto","from the point")}${f.pano?" · 360°":""}</span>
+      ${lista.length>1?`<span class="nav"><button type="button" data-d="-1" aria-label="${T("Anterior","Previous")}">‹</button>${i+1}/${lista.length}<button type="button" data-d="1" aria-label="${T("Próxima","Next")}">›</button></span>`:""}</div>
+      <p class="mt">© ${esc(f.autor||"Mapillary")} · <a href="https://www.mapillary.com/app/?pKey=${f.id}" target="_blank" rel="noopener">Mapillary</a>, CC BY-SA 4.0</p>`;
+  }
+  corpo.addEventListener("click",e=>{ const b=e.target.closest("button[data-d]"); if(!b) return; i=(i+(+b.dataset.d)+lista.length)%lista.length; mostra(); });
+  async function em(x,y){
+    const n=++pedido; cartao.hidden=false; corpo.innerHTML=`<p>${L("Procurando fotos de rua aqui…","Looking for street photos here…")}</p>`;
+    const lat=o.lat+y/ky, lon=o.lon+x/kx;
+    const D=await fetch(`api/foto?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}`).then(r=>r.ok?r.json():null).catch(()=>null);
+    if(n!==pedido) return;
+    lista=D?.fotos||[]; i=0;
+    if(!lista.length){ seta.visible=false; corpo.innerHTML=`<p>${L("Nenhuma foto de rua a menos de 60 m daqui. Tente perto de uma avenida.","No street photos within 60 m. Try near a main road.")}</p>`; return; }
+    mostra();
+  }
+  function liga(v){ ativo=v; bt.setAttribute("aria-pressed",v); palco.classList.toggle("modoFoto",v); if(!v){ cartao.hidden=true; seta.visible=false; }
+    else{ cartao.hidden=false; corpo.innerHTML=`<p>${L("Toque num ponto do mapa para ver a foto de rua mais perto.","Tap a point on the map to see the nearest street photo.")}</p>`; } }
+  bt.onclick=()=>liga(!ativo);
+  document.getElementById("fotoFechar").onclick=()=>liga(false);
+  return { clique(e){
+    if(!ativo) return false;
+    const r=renderer.domElement.getBoundingClientRect(); m2.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1); rc.setFromCamera(m2,camera);
+    const hit=rc.intersectObjects([chao,...malhasPredios],false)[0]; if(!hit) return true;
+    em(hit.point.x,-hit.point.z); return true;
+  } };
 })();
 
 let tAnt=performance.now();
