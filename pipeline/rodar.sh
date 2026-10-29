@@ -29,4 +29,6 @@ run "$D/camadas.py" "$OUT/bairro.json" "$OUT/camadas.json" "$P"/ssp_*.xlsx
 run "$D/itbi.py" "$OUT/bairro.json" "$OUT/itbi.json" "$P"/itbi_*.xlsx
 run "$D/zoneamento.py" "$OUT/bairro.json" "$OUT/zonas.json" "$P"/ad_*
 run "$D/atualizar_postos.py" "$OUT/postos.json" "$RAW"
+# GTFS da SPTrans: baixe na área de desenvolvedores (precisa de login) e descompacte em $RAW/gtfs
+[ -f "$RAW/gtfs/trips.txt" ] && run "$D/gerar_onibus.py" "$RAW/gtfs" "$OUT/bairro.json" "$OUT/onibus.json"
 echo "pronto: $OUT"

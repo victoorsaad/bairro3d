@@ -1241,6 +1241,7 @@ renderer.domElement.addEventListener("pointerup",e=>{
   if(!baixo||Math.hypot(e.clientX-baixo[0],e.clientY-baixo[1])>(e.pointerType==="touch"?12:6)) return;   // foi arrasto, não clique
   if(rua.ativo&&rua.toque(e)) return;
   if(fotosRua.clique(e)) return;
+  if(onibus.clique(e)) return;
   const s_=bolinhaEm(e.clientX,e.clientY,e.pointerType==="touch"?30:16);
   if(s_){ mostrarLugar(s_); return; }
   const r=renderer.domElement.getBoundingClientRect();
@@ -2023,13 +2024,68 @@ const fotosRua=(()=>{
   } };
 })();
 
+// ---------- ônibus pela grade programada (GTFS da SPTrans): cada linha anda no seu traçado conforme a hora de agora ----------
+const onibus=(()=>{
+  const bt=document.getElementById("btOnibus"), MAX=700;
+  const geo=new THREE.BoxGeometry(3,3.3,13); geo.translate(0,1.65,0);
+  const im=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({color:0xffffff}),MAX); im.count=0; im.frustumCulled=false; im.visible=false; scene.add(im);
+  const cor=new THREE.Color(), mx=new THREE.Matrix4(), q=new THREE.Quaternion(), up=new THREE.Vector3(0,1,0), escala=new THREE.Vector3(1,1,1), pos=new THREE.Vector3();
+  let D=null, ativo=false, quem=[], carregando=false;
+  try{ ativo=localStorage.getItem("bairro3d-onibus")==="1"; }catch(e){}
+  const agoraSP=()=>{ const p=Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/Sao_Paulo",hour12:false,weekday:"short",hour:"2-digit",minute:"2-digit",second:"2-digit"}).formatToParts(new Date()).map(x=>[x.type,x.value]));
+    return {dia:["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].indexOf(p.weekday),s:(+p.hour%24)*3600+(+p.minute)*60+(+p.second)+(Date.now()%1000)/1000}; };
+  async function carrega(){ if(D||carregando) return; carregando=true; D=await pegar("onibus.json"); carregando=false;
+    if(!D){ bt.hidden=true; return; }
+    for(const v of D.viagens){ const n=v.p.length/2; v.ac=[0]; for(let i=1;i<n;i++) v.ac.push(v.ac[i-1]+Math.hypot(v.p[2*i]-v.p[2*i-2],v.p[2*i+1]-v.p[2*i-1])); v.cor=new THREE.Color(v.c); } }
+  function ponto(v,dd){   // posição e direção a dd metros do início do trecho
+    let lo=0, hi=v.ac.length-1; while(hi-lo>1){ const m=(lo+hi)>>1; if(v.ac[m]<=dd) lo=m; else hi=m; }
+    const f=(dd-v.ac[lo])/Math.max(.01,v.ac[hi]-v.ac[lo]), x0=v.p[2*lo], y0=v.p[2*lo+1], x1=v.p[2*hi], y1=v.p[2*hi+1];
+    return [x0+(x1-x0)*f,y0+(y1-y0)*f,Math.atan2(x1-x0,-(y1-y0))];
+  }
+  function quadro(){
+    if(!ativo||!D) return;
+    const {dia,s}=agoraSP(); let n=0; quem=[];
+    for(const v of D.viagens){
+      if(!(D.dias[v.s]||[])[dia]) continue;
+      const fim=v.t[v.t.length-1];
+      for(const [ini,ate,h] of v.f){
+        for(const S of [s,s+86400]){   // viagens que começaram antes da meia-noite
+          const e0=S-v.o-fim, e1=S-v.o;   // a viagem começou (no ponto inicial) entre e0 e e1 para estar no trecho agora
+          let k=Math.max(0,Math.ceil((e0-ini)/h)), st;
+          while((st=ini+k*h)<=Math.min(ate,e1)&&n<MAX){
+            const el=S-v.o-st; let j=0; while(j<v.t.length-2&&v.t[j+1]<el) j++;
+            const dd=v.d[j]+(v.d[j+1]-v.d[j])*Math.min(1,Math.max(0,(el-v.t[j])/Math.max(1,v.t[j+1]-v.t[j])));
+            const [x,y,ang]=ponto(v,dd);
+            if(Math.hypot(x,y)<B.meta.anel_m){ pos.set(x,hZ(x,-y)+.2,-y); q.setFromAxisAngle(up,-ang); mx.compose(pos,q,escala);
+              im.setMatrixAt(n,mx); im.setColorAt(n,cor.copy(v.cor)); quem[n]=v; n++; }
+            k++;
+          }
+        }
+      }
+    }
+    im.count=n; im.instanceMatrix.needsUpdate=true; if(im.instanceColor) im.instanceColor.needsUpdate=true;
+  }
+  function liga(v){ ativo=v; bt.setAttribute("aria-pressed",v); im.visible=v; try{ localStorage.setItem("bairro3d-onibus",v?"1":"0"); }catch(e){} if(v) carrega(); }
+  bt.onclick=()=>liga(!ativo); liga(ativo);
+  const rc=new THREE.Raycaster(), m2=new THREE.Vector2();
+  return { quadro, clique(e){
+    if(!ativo||!im.count) return false;
+    const r=renderer.domElement.getBoundingClientRect(); m2.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1); rc.setFromCamera(m2,camera);
+    const h=rc.intersectObject(im,false)[0]; if(!h) return false;
+    const v=quem[h.instanceId]; if(!v) return false;
+    abrirBalao(h.point.clone().setY(h.point.y+6),`<b>${esc(v.r)} · ${esc(v.n)}</b><div class="tipo"><i style="background:${esc(v.c)}"></i>${L("Ônibus","Bus")}</div>
+      <p>${L("Posição pela grade programada da SPTrans (GTFS), não pelo GPS do ônibus.","Position from the SPTrans timetable (GTFS), not the bus GPS.")}</p>`);
+    return true;
+  } };
+})();
+
 let tAnt=performance.now();
 renderer.setAnimationLoop(()=>{
   const agora=performance.now(), dt=Math.min(.1,(agora-tAnt)/1000); tAnt=agora;
   solQuadro(agora); camadasQuadro(); chunks.quadro(agora); futuroQuadro(agora);
   if(carros&&!semMovimento) carros.passo(dt);
   rua.quadro(dt);
-  aoVivo.quadro(dt,agora);
+  aoVivo.quadro(dt,agora); if(!semMovimento) onibus.quadro();
   if(anim){
     const t=Math.max(0,Math.min(1,(agora-anim.t0)/anim.dur)), k=ease(t);
     camera.position.lerpVectors(anim.p0,anim.p1,k); controls.target.lerpVectors(anim.a0,anim.a1,k);
