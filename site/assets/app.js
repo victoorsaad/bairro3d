@@ -2072,8 +2072,25 @@ const fotosRua=(()=>{
 // Sem GPS (API fora), cai na grade programada: cada linha anda no seu traçado conforme a hora de agora ----------
 const onibus=(()=>{
   const bt=document.getElementById("btOnibus"), MAX=700;
-  const geo=new THREE.BoxGeometry(3,3.3,13); geo.translate(0,1.65,0);
-  const im=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({color:0xffffff}),MAX); im.count=0; im.frustumCulled=false; im.visible=false; scene.add(im);
+  // modelinho low-poly de ônibus urbano (12,4 × 2,5 × 3 m, frente em +z): a carroceria leva a cor da linha (cor por
+  // instância); janelas, para-brisa, teto, rodas e faróis são uma segunda malha com as mesmas posições e cores fixas
+  const caixa=(w,h,l,x,y,z,c)=>{ const g=new THREE.BoxGeometry(w,h,l).toNonIndexed(); g.translate(x,y,z); const k=new THREE.Color(c), n=g.attributes.position.count, a=new Float32Array(n*3);
+    for(let i=0;i<n;i++) a.set([k.r,k.g,k.b],i*3); g.setAttribute("color",new THREE.BufferAttribute(a,3)); g.deleteAttribute("uv"); return g; };
+  const geoCorpo=mergeGeometries([caixa(2.5,1.05,12.4,0,.95,0,0xffffff),caixa(2.5,.32,12.4,0,2.62,0,0xffffff),
+    ...[-5.4,-3.6,-1.8,0,1.8,3.6,5.4].flatMap(z=>[caixa(.05,1.1,.16,1.285,1.97,z,0xffffff),caixa(.05,1.1,.16,-1.285,1.97,z,0xffffff)])]);   // colunas entre as janelas
+  const geoDet=mergeGeometries([
+    caixa(2.56,1.1,11.9,0,1.97,-.15,0x1f2b38),          // faixa de janelas
+    caixa(2.3,1.25,.12,0,1.9,6.2,0x26394d),             // para-brisa
+    caixa(2.3,.5,.08,0,2.6,6.21,0x111111),              // letreiro
+    caixa(2.2,.28,5,0,2.92,-1,0xe9ecef),                // ar-condicionado no teto
+    caixa(2.62,.75,1.05,0,.42,4.1,0x1a1a1a), caixa(2.62,.75,1.05,0,.42,-3.6,0x1a1a1a),   // rodas (eixos)
+    caixa(.45,.22,.06,.85,.75,6.22,0xfff6d5), caixa(.45,.22,.06,-.85,.75,6.22,0xfff6d5), // faróis
+    caixa(.4,.25,.06,.9,.9,-6.22,0xd8352a), caixa(.4,.25,.06,-.9,.9,-6.22,0xd8352a),      // lanternas
+  ]);
+  const im=new THREE.InstancedMesh(geoCorpo,new THREE.MeshLambertMaterial({vertexColors:true}),MAX);
+  const imDet=new THREE.InstancedMesh(geoDet,new THREE.MeshLambertMaterial({vertexColors:true}),MAX);
+  for(const m of [im,imDet]){ m.count=0; m.frustumCulled=false; m.visible=false; scene.add(m); }
+  imDet.raycast=()=>{};
   const cor=new THREE.Color(), mx=new THREE.Matrix4(), q=new THREE.Quaternion(), up=new THREE.Vector3(0,1,0), escala=new THREE.Vector3(1,1,1), pos=new THREE.Vector3();
   let D=null, pD=null, ativo=false, quem=[], onde=[];   // quem/onde: ônibus e posição de cada instância desenhada (para o clique)
   // gps: Map prefixo → {l,d,cor,ang,fixes:[{t,x,y,seg}]}; null = ainda não respondeu; gpsFalhou = API fora, usa a grade
@@ -2139,13 +2156,14 @@ const onibus=(()=>{
       const dx=b.x-a.x, dy=b.y-a.y; return [a.x+dx*f,a.y+dy*f,Math.hypot(dx,dy)>3?Math.atan2(dx,-dy):null]; }
     const z=F[F.length-1]; return [z.x,z.y,null];
   }
-  function desenha(x,y,ang,c,quemE,n){
-    pos.set(x,hZ(x,-y)+.2,-y); q.setFromAxisAngle(up,-ang); mx.compose(pos,q,escala);
-    im.setMatrixAt(n,mx); im.setColorAt(n,cor.copy(c)); quem[n]=quemE; onde[n]=pos.clone();
+  function desenha(x,y,ang,c,quemE,n){   // ang = atan2(dx leste, dz da cena): mesma convenção dos trens (rotation.y)
+    pos.set(x,hZ(x,-y)+.15,-y); q.setFromAxisAngle(up,ang); mx.compose(pos,q,escala);
+    im.setMatrixAt(n,mx); imDet.setMatrixAt(n,mx); im.setColorAt(n,cor.copy(c)); quem[n]=quemE; onde[n]=pos.clone();
   }
   function quadro(){
     if(!ativo) return;
     let n=0; quem=[]; onde=[];
+    escala.setScalar(Math.min(2.2,Math.max(1,camera.position.distanceTo(controls.target)/700)));   // de longe, um pouco maiores
     if(gps&&relogio){
       const T=relogio[0]+(performance.now()-relogio[1])-ATRASO;
       for(const o of gps.values()){
@@ -2174,10 +2192,10 @@ const onibus=(()=>{
         }
       }
     }
-    im.count=n; im.instanceMatrix.needsUpdate=true; if(im.instanceColor) im.instanceColor.needsUpdate=true;
+    im.count=imDet.count=n; im.instanceMatrix.needsUpdate=imDet.instanceMatrix.needsUpdate=true; if(im.instanceColor) im.instanceColor.needsUpdate=true;
     im.boundingSphere=null;   // os ônibus andam: a esfera de limites do clique é refeita no próximo raycast
   }
-  function liga(v){ ativo=v; bt.setAttribute("aria-pressed",v); im.visible=v; try{ localStorage.setItem("bairro3d-onibus",v?"1":"0"); }catch(e){} if(v) lerGps(); else clearTimeout(timer); }
+  function liga(v){ ativo=v; bt.setAttribute("aria-pressed",v); im.visible=imDet.visible=v; try{ localStorage.setItem("bairro3d-onibus",v?"1":"0"); }catch(e){} if(v) lerGps(); else clearTimeout(timer); }
   bt.onclick=()=>liga(!ativo); liga(ativo);
   const rc=new THREE.Raycaster(), m2=new THREE.Vector2(), w=new THREE.Vector3();
   return { quadro, get n(){ return im.count; }, clique(e){
