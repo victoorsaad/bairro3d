@@ -12,7 +12,8 @@ Fontes:
             imagem em si (/api/foto/<id>.jpg), passada pelo servidor porque a CSP só deixa carregar imagem do próprio site
   noticias  Google News (RSS público, sem chave): manchetes dos últimos 7 dias que citam Pinheiros ou o Largo da Batata
   onibus    SPTrans Olho Vivo (token em SPTRANS_TOKEN, só HTTPS): posição GPS de todos os ônibus da cidade, guardada 20 s,
-            e cada pedido recorta em volta de um ponto (/api/onibus, ou ?lat=&lon= para outro centro dentro de SP)
+            e cada pedido recorta em volta de um ponto (/api/onibus, ou ?lat=&lon= para outro centro dentro de SP);
+            cada ônibus vem com até 2 leituras anteriores (h), para o navegador já mostrar o trajeto
   transito  TomTom (chave do plano grátis em TOMTOM_KEY): velocidade relativa por trecho (tiles "flow relative", zoom 14,
             3×3 em volta do centro) + interdições, acidentes e obras. 5 min de cache: ~2,6 mil tiles e 288 consultas por
             dia, longe dos limites grátis (50 mil tiles, 2,5 mil consultas)
@@ -251,6 +252,7 @@ def foto_img(ident):
 
 OLHO_VIVO = "https://api.olhovivo.sptrans.com.br/v2.1/"
 _ov = {"op": None, "t": 0, "d": None, "trava": threading.Lock()}
+_ov_hist = {}   # prefixo → últimas leituras [(lat, lon, horário)], para o navegador já começar com o ônibus andando
 
 
 def _ov_login():
@@ -290,6 +292,15 @@ def _ov_posicoes():
             destino = l.get("lt1") if l.get("sl") == 1 else l.get("lt0")
             for v in l.get("vs") or []:
                 out.append((v["py"], v["px"], v["p"], l.get("c", ""), destino or "", v.get("ta", "")))
+        vistos = set()
+        for a, o, p, c, dest, t in out:
+            h = _ov_hist.setdefault(p, [])
+            if not h or h[-1][2] != t:
+                h.append((a, o, t))
+                del h[:-3]
+            vistos.add(p)
+        for p in [p for p in _ov_hist if p not in vistos]:      # sumiu da API (recolheu): esquece
+            del _ov_hist[p]
         _ov["d"], _ov["t"] = out, time.time()
         return out
 
@@ -304,7 +315,7 @@ def onibus(lat=None, lon=None):
     if todos is None:
         return None
     kx, ky, r = 111320 * math.cos(math.radians(lat)), 110574, CONFIG["anel_m"]
-    out = [{"p": p, "l": c, "d": d, "lat": a, "lon": o, "ta": t} for a, o, p, c, d, t in todos
+    out = [{"p": p, "l": c, "d": d, "lat": a, "lon": o, "ta": t, "h": [list(x) for x in _ov_hist.get(p, [])[:-1]]} for a, o, p, c, d, t in todos
            if abs(a - lat) * ky < r and abs(o - lon) * kx < r and math.hypot((a - lat) * ky, (o - lon) * kx) < r]
     return json.dumps({"fonte": "SPTrans Olho Vivo", "idade": int(time.time() - _ov["t"]), "onibus": out},
                       separators=(",", ":"), ensure_ascii=False).encode()

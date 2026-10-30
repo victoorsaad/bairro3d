@@ -2067,96 +2067,134 @@ const fotosRua=(()=>{
   } };
 })();
 
-// ---------- ônibus: GPS ao vivo (SPTrans Olho Vivo, a cada 20 s, deslizando entre as leituras); sem GPS, a grade programada
-// (GTFS), com cada linha andando no seu traçado conforme a hora de agora ----------
+// ---------- ônibus: GPS ao vivo (SPTrans Olho Vivo). Cada ônibus manda posição a cada ~40 s; a maquete mostra o trajeto com
+// ATRASO de 1 min, andando pelo traçado da linha (GTFS) entre uma leitura e a seguinte, sem parar nem cortar quarteirão.
+// Sem GPS (API fora), cai na grade programada: cada linha anda no seu traçado conforme a hora de agora ----------
 const onibus=(()=>{
   const bt=document.getElementById("btOnibus"), MAX=700;
   const geo=new THREE.BoxGeometry(3,3.3,13); geo.translate(0,1.65,0);
   const im=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({color:0xffffff}),MAX); im.count=0; im.frustumCulled=false; im.visible=false; scene.add(im);
   const cor=new THREE.Color(), mx=new THREE.Matrix4(), q=new THREE.Quaternion(), up=new THREE.Vector3(0,1,0), escala=new THREE.Vector3(1,1,1), pos=new THREE.Vector3();
-  let D=null, ativo=false, quem=[], carregando=false;
-  let gps=null, corLinha=new Map(), timer=0;   // gps: Map prefixo → {x0,y0,x1,y1,t0,ang,l,d,ta}; null = sem GPS, usa a grade
-  const kx=B.meta.m_por_grau.lon, ky=B.meta.m_por_grau.lat, org=B.meta.origem, DESLIZA=18000;
+  let D=null, pD=null, ativo=false, quem=[], onde=[];   // quem/onde: ônibus e posição de cada instância desenhada (para o clique)
+  // gps: Map prefixo → {l,d,cor,ang,fixes:[{t,x,y,seg}]}; null = ainda não respondeu; gpsFalhou = API fora, usa a grade
+  let gps=null, gpsFalhou=false, timer=0, relogio=null;   // relogio: [hora da leitura mais nova (ms), performance.now() ao receber]
+  const porLinha=new Map(), kx=B.meta.m_por_grau.lon, ky=B.meta.m_por_grau.lat, org=B.meta.origem, ATRASO=60000;
   try{ ativo=localStorage.getItem("bairro3d-onibus")==="1"; }catch(e){}
   const agoraSP=()=>{ const p=Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/Sao_Paulo",hour12:false,weekday:"short",hour:"2-digit",minute:"2-digit",second:"2-digit"}).formatToParts(new Date()).map(x=>[x.type,x.value]));
     return {dia:["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].indexOf(p.weekday),s:(+p.hour%24)*3600+(+p.minute)*60+(+p.second)+(Date.now()%1000)/1000}; };
-  async function carrega(){ if(D||carregando) return; carregando=true; D=await pegar("onibus.json"); carregando=false;
-    if(!D){ bt.hidden=true; return; }
-    for(const v of D.viagens){ const n=v.p.length/2; v.ac=[0]; for(let i=1;i<n;i++) v.ac.push(v.ac[i-1]+Math.hypot(v.p[2*i]-v.p[2*i-2],v.p[2*i+1]-v.p[2*i-1])); v.cor=new THREE.Color(v.c); corLinha.set(v.r,v.c); } }
-  async function lerGps(){
-    clearTimeout(timer); if(!ativo) return;
-    if(document.visibilityState==="visible"){
-      const R=await fetch(`api/onibus?lat=${org.lat}&lon=${org.lon}`).then(r=>r.ok?r.json():null).catch(()=>null);
-      if(R&&R.onibus.length){
-        const agora=performance.now(), novo=new Map();
-        for(const o of R.onibus){
-          const x=(o.lon-org.lon)*kx, y=(o.lat-org.lat)*ky, a=gps?.get(o.p);
-          let x0=x, y0=y, ang=a?.ang??0;
-          if(a){ const f=Math.min(1,(agora-a.t0)/DESLIZA); x0=a.x0+(a.x1-a.x0)*f; y0=a.y0+(a.y1-a.y0)*f;
-            if(Math.hypot(x-x0,y-y0)>3) ang=Math.atan2(x-x0,-(y-y0));
-            if(Math.hypot(x-x0,y-y0)>400){ x0=x; y0=y; } }        // pulo grande (GPS voltou, garagem): aparece direto
-          novo.set(o.p,{x0,y0,x1:x,y1:y,t0:agora,ang,l:o.l,d:o.d,ta:o.ta,cor:new THREE.Color(corLinha.get(o.l)||"#2563eb")});
-        }
-        gps=novo;
-      } else if(!R) gps=null;
-    }
-    timer=setTimeout(lerGps,20000);
+  function carrega(){
+    return pD||(pD=pegar("onibus.json").then(d=>{ D=d; if(!D) return;
+      for(const v of D.viagens){ const n=v.p.length/2; v.ac=[0]; for(let i=1;i<n;i++) v.ac.push(v.ac[i-1]+Math.hypot(v.p[2*i]-v.p[2*i-2],v.p[2*i+1]-v.p[2*i-1])); v.cor=new THREE.Color(v.c);
+        if(!porLinha.has(v.r)) porLinha.set(v.r,[]); porLinha.get(v.r).push(v); } }));
+  }
+  function projeta(v,x,y){   // [distância² ao traçado, metros desde o início do traçado] do ponto mais perto
+    const p=v.p; let dm=Infinity, sm=0;
+    for(let i=0;i<p.length-2;i+=2){ const ax=p[i], ay=p[i+1], dx=p[i+2]-ax, dy=p[i+3]-ay, L2=dx*dx+dy*dy||1;
+      const f=Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/L2)), ex=ax+dx*f-x, ey=ay+dy*f-y, d=ex*ex+ey*ey;
+      if(d<dm){ dm=d; sm=v.ac[i/2]+f*(v.ac[i/2+1]-v.ac[i/2]); } }
+    return [dm,sm];
+  }
+  function trecho(l,a,b){   // a→b andando por um traçado da linha no sentido certo (os dois a até 35 m dele), ou null
+    let melhor=null, dm=35*35;
+    for(const v of porLinha.get(l)||[]){
+      const [da,sa]=projeta(v,a.x,a.y), [db,sb]=projeta(v,b.x,b.y);
+      if(da<dm&&db<35*35&&sb>=sa-5&&sb-sa<2500){ dm=da; melhor={v,s0:sa,s1:Math.max(sa,sb)}; } }
+    return melhor;
   }
   function ponto(v,dd){   // posição e direção a dd metros do início do trecho
     let lo=0, hi=v.ac.length-1; while(hi-lo>1){ const m=(lo+hi)>>1; if(v.ac[m]<=dd) lo=m; else hi=m; }
     const f=(dd-v.ac[lo])/Math.max(.01,v.ac[hi]-v.ac[lo]), x0=v.p[2*lo], y0=v.p[2*lo+1], x1=v.p[2*hi], y1=v.p[2*hi+1];
     return [x0+(x1-x0)*f,y0+(y1-y0)*f,Math.atan2(x1-x0,-(y1-y0))];
   }
+  async function lerGps(){
+    clearTimeout(timer); if(!ativo) return;
+    if(document.visibilityState==="visible"){
+      await carrega();
+      const R=await fetch(`api/onibus?lat=${org.lat}&lon=${org.lon}`).then(r=>r.ok?r.json():null).catch(()=>null);
+      if(R){
+        gpsFalhou=false; const novo=new Map(); let maisNova=0;
+        for(const o of R.onibus){
+          const t=Date.parse(o.ta); if(!Number.isFinite(t)) continue; maisNova=Math.max(maisNova,t);
+          const a=gps?.get(o.p)||{l:o.l,d:o.d,ang:null,fixes:[],cor:new THREE.Color(porLinha.get(o.l)?.[0]?.c||"#2563eb")};
+          a.d=o.d;
+          for(const [la,lo,ta] of [...(a.fixes.length?[]:o.h||[]),[o.lat,o.lon,o.ta]]){   // ônibus novo: entra com as leituras anteriores
+            const tt=Date.parse(ta), F=a.fixes, ult=F[F.length-1]; if(!Number.isFinite(tt)||(ult&&tt<=ult.t)) continue;
+            const fx={t:tt,x:(lo-org.lon)*kx,y:(la-org.lat)*ky,seg:null};
+            if(ult&&(Math.hypot(fx.x-ult.x,fx.y-ult.y)>800||tt-ult.t>300000)) F.length=0;   // pulo (GPS voltou, garagem): recomeça
+            else if(ult) fx.seg=trecho(o.l,ult,fx);
+            F.push(fx); while(F.length>5) F.shift();
+          }
+          novo.set(o.p,a);
+        }
+        gps=novo; if(maisNova) relogio=[maisNova,performance.now()];
+      } else if(!gps) gpsFalhou=true;
+    }
+    timer=setTimeout(lerGps,15000);
+  }
+  function naHora(o,T){   // [x,y,ângulo ou null] do ônibus no instante T (ms, relógio da SPTrans)
+    const F=o.fixes; if(T<=F[0].t) return [F[0].x,F[0].y,null];
+    for(let k=1;k<F.length;k++){ const a=F[k-1], b=F[k]; if(T>b.t) continue;
+      const f=(T-a.t)/Math.max(1,b.t-a.t);
+      if(b.seg) return ponto(b.seg.v,b.seg.s0+(b.seg.s1-b.seg.s0)*f);
+      const dx=b.x-a.x, dy=b.y-a.y; return [a.x+dx*f,a.y+dy*f,Math.hypot(dx,dy)>3?Math.atan2(dx,-dy):null]; }
+    const z=F[F.length-1]; return [z.x,z.y,null];
+  }
+  function desenha(x,y,ang,c,quemE,n){
+    pos.set(x,hZ(x,-y)+.2,-y); q.setFromAxisAngle(up,-ang); mx.compose(pos,q,escala);
+    im.setMatrixAt(n,mx); im.setColorAt(n,cor.copy(c)); quem[n]=quemE; onde[n]=pos.clone();
+  }
   function quadro(){
     if(!ativo) return;
-    if(gps){
-      const agora=performance.now(); let n=0; quem=[];
+    let n=0; quem=[]; onde=[];
+    if(gps&&relogio){
+      const T=relogio[0]+(performance.now()-relogio[1])-ATRASO;
       for(const o of gps.values()){
         if(n>=MAX) break;
-        const f=Math.min(1,(agora-o.t0)/DESLIZA), x=o.x0+(o.x1-o.x0)*f, y=o.y0+(o.y1-o.y0)*f;
+        const [x,y,ang]=naHora(o,T); if(ang!=null) o.ang=ang;
         if(Math.hypot(x,y)>=B.meta.anel_m) continue;
-        pos.set(x,hZ(x,-y)+.2,-y); q.setFromAxisAngle(up,-o.ang); mx.compose(pos,q,escala);
-        im.setMatrixAt(n,mx); im.setColorAt(n,cor.copy(o.cor)); quem[n]=o; n++;
+        desenha(x,y,o.ang??0,o.cor,o,n++);
       }
-      im.count=n; im.instanceMatrix.needsUpdate=true; if(im.instanceColor) im.instanceColor.needsUpdate=true;
-      return;
-    }
-    if(!D) return;
-    const {dia,s}=agoraSP(); let n=0; quem=[];
-    for(const v of D.viagens){
-      if(!(D.dias[v.s]||[])[dia]) continue;
-      const fim=v.t[v.t.length-1];
-      for(const [ini,ate,h] of v.f){
-        for(const S of [s,s+86400]){   // viagens que começaram antes da meia-noite
-          const e0=S-v.o-fim, e1=S-v.o;   // a viagem começou (no ponto inicial) entre e0 e e1 para estar no trecho agora
-          let k=Math.max(0,Math.ceil((e0-ini)/h)), st;
-          while((st=ini+k*h)<=Math.min(ate,e1)&&n<MAX){
-            const el=S-v.o-st; let j=0; while(j<v.t.length-2&&v.t[j+1]<el) j++;
-            const dd=v.d[j]+(v.d[j+1]-v.d[j])*Math.min(1,Math.max(0,(el-v.t[j])/Math.max(1,v.t[j+1]-v.t[j])));
-            const [x,y,ang]=ponto(v,dd);
-            if(Math.hypot(x,y)<B.meta.anel_m){ pos.set(x,hZ(x,-y)+.2,-y); q.setFromAxisAngle(up,-ang); mx.compose(pos,q,escala);
-              im.setMatrixAt(n,mx); im.setColorAt(n,cor.copy(v.cor)); quem[n]=v; n++; }
-            k++;
+    } else if(gpsFalhou&&D){
+      const {dia,s}=agoraSP();
+      for(const v of D.viagens){
+        if(!(D.dias[v.s]||[])[dia]) continue;
+        const fim=v.t[v.t.length-1];
+        for(const [ini,ate,h] of v.f){
+          for(const S of [s,s+86400]){   // viagens que começaram antes da meia-noite
+            const e0=S-v.o-fim, e1=S-v.o;   // a viagem começou (no ponto inicial) entre e0 e e1 para estar no trecho agora
+            let k=Math.max(0,Math.ceil((e0-ini)/h)), st;
+            while((st=ini+k*h)<=Math.min(ate,e1)&&n<MAX){
+              const el=S-v.o-st; let j=0; while(j<v.t.length-2&&v.t[j+1]<el) j++;
+              const dd=v.d[j]+(v.d[j+1]-v.d[j])*Math.min(1,Math.max(0,(el-v.t[j])/Math.max(1,v.t[j+1]-v.t[j])));
+              const [x,y,ang]=ponto(v,dd);
+              if(Math.hypot(x,y)<B.meta.anel_m) desenha(x,y,ang,v.cor,v,n++);
+              k++;
+            }
           }
         }
       }
     }
     im.count=n; im.instanceMatrix.needsUpdate=true; if(im.instanceColor) im.instanceColor.needsUpdate=true;
+    im.boundingSphere=null;   // os ônibus andam: a esfera de limites do clique é refeita no próximo raycast
   }
-  function liga(v){ ativo=v; bt.setAttribute("aria-pressed",v); im.visible=v; try{ localStorage.setItem("bairro3d-onibus",v?"1":"0"); }catch(e){} if(v){ carrega(); lerGps(); } else clearTimeout(timer); }
+  function liga(v){ ativo=v; bt.setAttribute("aria-pressed",v); im.visible=v; try{ localStorage.setItem("bairro3d-onibus",v?"1":"0"); }catch(e){} if(v) lerGps(); else clearTimeout(timer); }
   bt.onclick=()=>liga(!ativo); liga(ativo);
-  const rc=new THREE.Raycaster(), m2=new THREE.Vector2();
-  return { quadro, clique(e){
+  const rc=new THREE.Raycaster(), m2=new THREE.Vector2(), w=new THREE.Vector3();
+  return { quadro, get n(){ return im.count; }, clique(e){
     if(!ativo||!im.count) return false;
     const r=renderer.domElement.getBoundingClientRect(); m2.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1); rc.setFromCamera(m2,camera);
-    const h=rc.intersectObject(im,false)[0]; if(!h) return false;
-    const v=quem[h.instanceId]; if(!v) return false;
-    if(v.t0!=null){ const s=Math.max(0,Math.round((Date.now()-Date.parse(v.ta))/1000)), q=s<90?`${s} s`:`${Math.round(s/60)} min`;
-      abrirBalao(h.point.clone().setY(h.point.y+6),`<b>${esc(v.l)} · ${esc(v.d)}</b><div class="tipo"><i style="background:#${v.cor.getHexString()}"></i>${L("Ônibus","Bus")}</div>
-        <p>${L(`GPS ao vivo da SPTrans (Olho Vivo), posição de ${q} atrás.`,`Live SPTrans GPS (Olho Vivo), position from ${q} ago.`)}</p>`);
-      return true; }
-    abrirBalao(h.point.clone().setY(h.point.y+6),`<b>${esc(v.r)} · ${esc(v.n)}</b><div class="tipo"><i style="background:${esc(v.c)}"></i>${L("Ônibus","Bus")}</div>
-      <p>${L("Posição pela grade programada da SPTrans (GTFS), não pelo GPS do ônibus.","Position from the SPTrans timetable (GTFS), not the bus GPS.")}</p>`);
+    let i=rc.intersectObject(im,false)[0]?.instanceId;
+    if(i==null){   // ônibus é pequeno de longe: vale o mais perto do toque, até 18 px
+      let dm=18*18;
+      for(let k=0;k<onde.length;k++){ w.copy(onde[k]).project(camera); if(w.z>1) continue;
+        const dx=(w.x+1)/2*r.width-(e.clientX-r.left), dy=(1-w.y)/2*r.height-(e.clientY-r.top), d=dx*dx+dy*dy; if(d<dm){ dm=d; i=k; } }
+    }
+    const v=i==null?null:quem[i]; if(!v) return false;
+    const alvo=onde[i].clone().setY(onde[i].y+6);
+    if(v.fixes) abrirBalao(alvo,`<b>${esc(v.l)} · ${esc(v.d)}</b><div class="tipo"><i style="background:#${v.cor.getHexString()}"></i>${L("Ônibus","Bus")}</div>
+        <p>${L("GPS ao vivo da SPTrans (Olho Vivo). O ônibus anda com cerca de 1 min de atraso, pelo traçado da linha entre uma leitura e a seguinte.","Live SPTrans GPS (Olho Vivo). Buses play back about 1 min behind, following the route between one reading and the next.")}</p>`);
+    else abrirBalao(alvo,`<b>${esc(v.r)} · ${esc(v.n)}</b><div class="tipo"><i style="background:${esc(v.c)}"></i>${L("Ônibus","Bus")}</div>
+      <p>${L("Posição pela grade programada da SPTrans (GTFS): o GPS está fora do ar agora.","Position from the SPTrans timetable (GTFS): the GPS feed is down right now.")}</p>`);
     return true;
   } };
 })();
