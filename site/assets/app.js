@@ -62,8 +62,12 @@ const altitude=m=>Math.round((RM?.base_altitude||0)+m);
 // aparelho modesto (celular, pouca memória ou poucos núcleos): menos pixels, sombra menor, menos carros
 const MODESTO=matchMedia("(pointer:coarse)").matches||(navigator.deviceMemory||8)<=4||(navigator.hardwareConcurrency||8)<=4;
 const renderer=new THREE.WebGLRenderer({antialias:!MODESTO,powerPreference:"high-performance"});
-renderer.setPixelRatio(Math.min(devicePixelRatio,MODESTO?1.5:2));
+renderer.setPixelRatio(Math.min(devicePixelRatio,MODESTO?1.25:1.5));   // 2× (Retina) desenhava 4× os pixels; com antialias, 1,5× quase não muda
 renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+// a sombra (4096², todos os prédios e árvores) custava um segundo desenho da cena por quadro: agora só refaz quando algo
+// muda (sombraJa) ou a cada 500 ms, para pegar o que entrou sem avisar; carros e trens não fazem sombra
+renderer.shadowMap.autoUpdate=false; renderer.shadowMap.needsUpdate=true;
+const sombraJa=()=>{ renderer.shadowMap.needsUpdate=true; };
 renderer.outputColorSpace=THREE.SRGBColorSpace;
 palco.prepend(renderer.domElement);
 const scene=new THREE.Scene();
@@ -573,7 +577,7 @@ const carros=(()=>{
     const c=sorteia(); lista.push({c,d:Math.random()*c.L,v:(9+Math.random()*7)*(Math.random()<.5?1:-1)});
     mCorpo.setColorAt(i,cor.set(CORES[i%CORES.length]));
   }
-  mCorpo.castShadow=true; scene.add(mCorpo,farol,lanterna);
+  scene.add(mCorpo,farol,lanterna);
   const m=new THREE.Matrix4(), q=new THREE.Quaternion(), um=new THREE.Vector3(1,1,1), eixo=new THREE.Vector3(0,1,0), pos=new THREE.Vector3();
   function passo(dt){
     lista.forEach((k,i)=>{
@@ -732,6 +736,7 @@ function modo(noite){
   matAresta.color.set(noite?0x9aa3d8:0x5c6678); matAresta.opacity=noite?.45:.55;
   matRua.color.set(noite?0x3a4158:0x9aa1ad); matCalcada.color.set(noite?0x2c3248:0xd8d4cb);
   chao.material.color.set(noite?0x252b47:0xffffff);   // multiplica as cores do terreno
+  sombraJa();
   ortoNoite?.(noite);
   horizonte.noite(noite);
   matCurva.color.set(noite?0x9aa6e0:0x8a6f55); matMestra.color.set(noite?0xb4bdf0:0x7a5d43);
@@ -767,6 +772,7 @@ opcoesDia(); aoTrocarIdioma.push(opcoesDia);
 function diaSol(){ const v=solDia.value, a=new Date(); if(v==="hoje") return a; const [mm,dd]=v.split("-").map(Number); return new Date(a.getFullYear(),mm-1,dd); }
 let solLigado=false, solAnim=null;
 function solAplica(){
+  sombraJa();
   const dia=diaSol(), m=+solHora.value, s=posicaoSol(horaSP(dia,m),B.meta.origem.lat,B.meta.origem.lon), d=dirSol(s);
   const acima=s.alt>0, k=Math.max(0,Math.min(1,s.alt/(25*Math.PI/180)));
   const foco=controls.target.clone().setY(0);
@@ -1100,7 +1106,7 @@ btRelevo.onclick=()=>relevo(!curvas.visible);
 const btOrto=document.getElementById("btOrto");
 const orto=(()=>{
   const g=new THREE.Group(); g.visible=false; scene.add(g);
-  const mat=[]; let carregado=null;
+  const mat=[]; let carregado=null, faltam=0;   // faltam: blocos ainda sem foto (com todos prontos, o chão de baixo some)
   ortoNoite=v=>mat.forEach(m=>m.color.set(v?0x4a5070:0xffffff));
   function carrega(){
     if(carregado) return carregado;
@@ -1119,13 +1125,13 @@ const orto=(()=>{
         geo.setAttribute("position",new THREE.Float32BufferAttribute(pos,3)); geo.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));
         geo.setIndex(idx); geo.computeVertexNormals();
         const m=new THREE.MeshLambertMaterial({color:noiteAtual?0x4a5070:0xffffff,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1});
-        carr.load(`${DADOS}orto/${i}_${j}.webp`,t=>{ t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=an; m.map=t; m.needsUpdate=true; });
+        faltam++; carr.load(`${DADOS}orto/${i}_${j}.webp`,t=>{ t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=an; m.map=t; m.needsUpdate=true; if(--faltam===0) chao.visible=!g.visible; });
         mat.push(m); const me=new THREE.Mesh(geo,m); me.receiveShadow=true; g.add(me);
       }
     });
   }
   return {
-    liga(v){ g.visible=v; ruasMesh.visible=calcMesh.visible=!v; btOrto.setAttribute("aria-pressed",v); if(v) carrega(); },
+    liga(v){ g.visible=v; ruasMesh.visible=calcMesh.visible=!v; chao.visible=!v||!carregado||faltam>0; btOrto.setAttribute("aria-pressed",v); if(v) carrega(); },
     get visivel(){ return g.visible; },
   };
 })();
@@ -1456,7 +1462,7 @@ entornoP.then(r=>{
   const geoCarro=new THREE.BoxGeometry(3,3.6,19.6).translate(0,1.8,0);
   trens.forEach((tr,i)=>{
     const mats=MAT_TREM[tr.k].map(c=>new THREE.MeshLambertMaterial({color:c}));
-    tr.carros=Array.from({length:tr.k==="metro"?6:8},()=>{ const m=new THREE.Mesh(geoCarro,mats); m.castShadow=true; m.visible=false; m.raycast=()=>{}; scene.add(m); return m; });
+    tr.carros=Array.from({length:tr.k==="metro"?6:8},()=>{ const m=new THREE.Mesh(geoCarro,mats); m.visible=false; m.raycast=()=>{}; scene.add(m); return m; });
     tr.v=tr.k==="metro"?15:13; tr.volta=i%2===1; tr.off=(i*977)%(tr.L+500);
   });
 
@@ -2156,8 +2162,29 @@ const onibus=(()=>{
 })();
 
 let tAnt=performance.now();
-renderer.setAnimationLoop(()=>{
-  const agora=performance.now(), dt=Math.min(.1,(agora-tAnt)/1000); tAnt=agora;
+// resolução adaptativa: a cada 2 s olha o tempo médio de quadro; abaixo de ~45 qps baixa 0,25 no pixelRatio (até 1) e
+// não volta mais acima do que ficou lento; folgado (no vsync) por 6 s seguidos, sobe de novo até o máximo do aparelho
+const DPR_MAX=renderer.getPixelRatio(); let dpr=DPR_MAX, dprTeto=DPR_MAX, qSoma=0, qN=0, qBom=0, tQ=performance.now(), tSombra=0, tRot=0;
+const camAnt=new THREE.Matrix4();
+function adapta(agora,ms){
+  if(ms<250&&agora-tMexeu<1500){ qSoma+=ms; qN++; }   // só mede com a câmera mexendo (parado roda a 30 de propósito)
+  if(agora-tQ<2000||qN<20) return;
+  const med=qSoma/qN; qSoma=qN=0; tQ=agora;
+  if(med>22&&dpr>1){ dprTeto=dpr-.25; dpr=Math.max(1,dprTeto); renderer.setPixelRatio(dpr); qBom=0; }
+  else if(med<17.5&&dpr<dprTeto){ if(++qBom>=3){ dpr=Math.min(dprTeto,dpr+.25); renderer.setPixelRatio(dpr); qBom=0; } }
+  else qBom=0;
+}
+let tMexeu=performance.now(), tDesenho=0;
+controls.addEventListener("start",()=>{ tMexeu=performance.now(); }); controls.addEventListener("change",()=>{ tMexeu=performance.now(); });
+palco.addEventListener("pointerdown",()=>{ tMexeu=performance.now(); },{passive:true});
+addEventListener("resize",()=>{ tMexeu=performance.now(); });   // redimensionar apaga o canvas: redesenha já
+function quadro(){
+  const t=performance.now();
+  if(t-tMexeu>1500&&!anim&&!rua.ativo&&!diretor.ativo&&t-tDesenho<30) return;   // parado: ~30 qps bastam
+  tDesenho=t;
+  const agora=t, ms=agora-tAnt, dt=Math.min(.1,ms/1000); tAnt=agora;
+  adapta(agora,ms);
+  if(agora-tSombra>500){ tSombra=agora; sombraJa(); }
   solQuadro(agora); camadasQuadro(); chunks.quadro(agora); futuroQuadro(agora);
   if(carros&&!semMovimento) carros.passo(dt);
   rua.quadro(dt);
@@ -2171,14 +2198,16 @@ renderer.setAnimationLoop(()=>{
   if(!rua.ativo&&!diretor.ativo) controls.update();
   estilos.render(agora);
   rotulo.style.display=!rua.ativo&&projeta(topoC,rotulo,64)?"":"none";
-  { // postos: só de perto (câmera a menos de ~1,6 km do alvo); os sem preço, só bem perto
+  const moveu=!camAnt.equals(camera.matrixWorld); if(moveu) camAnt.copy(camera.matrixWorld);
+  const rotulos=moveu||agora-tRot>200; if(rotulos) tRot=agora;
+  if(rotulos){ // postos: só de perto (câmera a menos de ~1,6 km do alvo); os sem preço, só bem perto
     const dCam=camera.position.distanceTo(controls.target);
     for(const q of postos){
       const ok=verPostos&&(rua.ativo?q.pos.distanceTo(camera.position)<350:dCam<(q.p.g!=null?1600:700))&&projeta(q.pos,q.el);
       q.el.style.display=ok?"":"none";
     }
   }
-  { const dCam=camera.position.distanceTo(controls.target);
+  if(rotulos){ const dCam=camera.position.distanceTo(controls.target);
     for(const q of marcadores){
       const ok=!q.oculto&&(rua.ativo?q.pos.distanceTo(camera.position)<350:dCam<q.perto)&&projeta(q.pos,q.el);
       q.el.style.display=ok?"":"none"; q.vis=ok;
@@ -2193,7 +2222,7 @@ renderer.setAnimationLoop(()=>{
   { const perto=camera.position.distanceTo(controls.target)<1400;   // de longe as lajes nem aparecem
     for(const l of lajesLOD) l.m.visible=perto&&Math.hypot(camera.position.x-l.c.x,camera.position.z-l.c.z)<(l.r||750); }
   ceuMesh.position.copy(camera.position); estrelas.position.copy(camera.position); passoTrens(agora);
-  { // nomes de rua: só perto (câmera a menos de ~650 m do alvo), no máximo 10, os mais próximos do centro da vista
+  if(rotulos){ // nomes de rua: só perto (câmera a menos de ~650 m do alvo), no máximo 10, os mais próximos do centro da vista
     const dCam=camera.position.distanceTo(controls.target), vis=[];
     if(dCam<650) for(const it of nomesRua){ const d=it.pos.distanceTo(controls.target); if(d<Math.max(220,dCam*.8)) vis.push([d,it]); }
     vis.sort((a,b)=>a[0]-b[0]); const mostrar=new Set(vis.slice(0,10).map(v=>v[1])), ocupados=[];
@@ -2216,5 +2245,8 @@ renderer.setAnimationLoop(()=>{
     scene.fog.near=d+(lg?900:500); scene.fog.far=d+(lg?(noiteAtual?14000:30000):(noiteAtual?2600:3400)); }
   const az=Math.atan2(camera.position.x-controls.target.x,camera.position.z-controls.target.z);
   agulha.setAttribute("transform",`rotate(${-az*180/Math.PI} 15 15)`);
-});
+}
+renderer.setAnimationLoop(quadro);
+// maquete fora da tela (rolou para ler o resto da página): para de desenhar
+new IntersectionObserver(([e])=>{ tAnt=tMexeu=performance.now(); renderer.setAnimationLoop(e.isIntersecting?quadro:null); }).observe(palco);
 
