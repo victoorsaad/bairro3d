@@ -5,9 +5,9 @@ lazrs==0.8.2
 matplotlib==3.11.2
 numpy==2.5.4
 openpyxl==3.1.5
+pillow==11.3.0
 pyproj==3.8.0
 scikit-image==0.26.0
 scipy==1.18.1
 shapely==2.2.0
 tifffile==2026.10.15
-pillow
