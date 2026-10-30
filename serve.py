@@ -8,6 +8,7 @@ Serve só o que está na allowlist:
   /data/chunks/<c>.json     -> pedaços do anel carregados perto da câmera
   /data/orto/<i>_<j>.webp   -> blocos da foto aérea (Ortofoto 2020 da Prefeitura)
   /robots.txt, /sitemap.xml, /og.jpg -> indexação e prévia de link
+  /api/onibus[?lat=&lon=]   -> ônibus por GPS (SPTrans Olho Vivo) em volta do centro ou do ponto pedido
   /api/<fonte>              -> dados ao vivo (aovivo.py): o servidor busca na fonte, recorta o raio e guarda em cache
 Qualquer outra coisa (diretórios, dotfiles, .py, caminhos com ..) é 404.
 
@@ -88,6 +89,8 @@ class Handler(SimpleHTTPRequestHandler):
     def api(self, fonte, corpo):
         if fonte == "foto" or fonte.startswith("foto/"):
             return self.foto(fonte, corpo)
+        if fonte == "onibus":
+            return self.onibus(corpo)
         r = aovivo.pegar(fonte)
         if r is None:
             return self.send_error(404)
@@ -120,6 +123,25 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", tipo)
         self.send_header("Content-Length", str(len(dados)))
+        self.end_headers()
+        if corpo:
+            self.wfile.write(dados)
+
+    def onibus(self, corpo):
+        try:
+            q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+            dados = aovivo.onibus(float(q["lat"][0]), float(q["lon"][0])) if "lat" in q else aovivo.onibus()
+        except (KeyError, ValueError):
+            return self.send_error(400)
+        except Exception as e:
+            sys.stderr.write("onibus: %s\n" % e)
+            return self.send_error(503, "fonte fora do ar")
+        if dados is None:
+            return self.send_error(404)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(dados)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         if corpo:
             self.wfile.write(dados)

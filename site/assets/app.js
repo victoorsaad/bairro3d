@@ -2061,26 +2061,61 @@ const fotosRua=(()=>{
   } };
 })();
 
-// ---------- ônibus pela grade programada (GTFS da SPTrans): cada linha anda no seu traçado conforme a hora de agora ----------
+// ---------- ônibus: GPS ao vivo (SPTrans Olho Vivo, a cada 20 s, deslizando entre as leituras); sem GPS, a grade programada
+// (GTFS), com cada linha andando no seu traçado conforme a hora de agora ----------
 const onibus=(()=>{
   const bt=document.getElementById("btOnibus"), MAX=700;
   const geo=new THREE.BoxGeometry(3,3.3,13); geo.translate(0,1.65,0);
   const im=new THREE.InstancedMesh(geo,new THREE.MeshLambertMaterial({color:0xffffff}),MAX); im.count=0; im.frustumCulled=false; im.visible=false; scene.add(im);
   const cor=new THREE.Color(), mx=new THREE.Matrix4(), q=new THREE.Quaternion(), up=new THREE.Vector3(0,1,0), escala=new THREE.Vector3(1,1,1), pos=new THREE.Vector3();
   let D=null, ativo=false, quem=[], carregando=false;
+  let gps=null, corLinha=new Map(), timer=0;   // gps: Map prefixo → {x0,y0,x1,y1,t0,ang,l,d,ta}; null = sem GPS, usa a grade
+  const kx=B.meta.m_por_grau.lon, ky=B.meta.m_por_grau.lat, org=B.meta.origem, DESLIZA=18000;
   try{ ativo=localStorage.getItem("bairro3d-onibus")==="1"; }catch(e){}
   const agoraSP=()=>{ const p=Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/Sao_Paulo",hour12:false,weekday:"short",hour:"2-digit",minute:"2-digit",second:"2-digit"}).formatToParts(new Date()).map(x=>[x.type,x.value]));
     return {dia:["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].indexOf(p.weekday),s:(+p.hour%24)*3600+(+p.minute)*60+(+p.second)+(Date.now()%1000)/1000}; };
   async function carrega(){ if(D||carregando) return; carregando=true; D=await pegar("onibus.json"); carregando=false;
     if(!D){ bt.hidden=true; return; }
-    for(const v of D.viagens){ const n=v.p.length/2; v.ac=[0]; for(let i=1;i<n;i++) v.ac.push(v.ac[i-1]+Math.hypot(v.p[2*i]-v.p[2*i-2],v.p[2*i+1]-v.p[2*i-1])); v.cor=new THREE.Color(v.c); } }
+    for(const v of D.viagens){ const n=v.p.length/2; v.ac=[0]; for(let i=1;i<n;i++) v.ac.push(v.ac[i-1]+Math.hypot(v.p[2*i]-v.p[2*i-2],v.p[2*i+1]-v.p[2*i-1])); v.cor=new THREE.Color(v.c); corLinha.set(v.r,v.c); } }
+  async function lerGps(){
+    clearTimeout(timer); if(!ativo) return;
+    if(document.visibilityState==="visible"){
+      const R=await fetch(`api/onibus?lat=${org.lat}&lon=${org.lon}`).then(r=>r.ok?r.json():null).catch(()=>null);
+      if(R&&R.onibus.length){
+        const agora=performance.now(), novo=new Map();
+        for(const o of R.onibus){
+          const x=(o.lon-org.lon)*kx, y=(o.lat-org.lat)*ky, a=gps?.get(o.p);
+          let x0=x, y0=y, ang=a?.ang??0;
+          if(a){ const f=Math.min(1,(agora-a.t0)/DESLIZA); x0=a.x0+(a.x1-a.x0)*f; y0=a.y0+(a.y1-a.y0)*f;
+            if(Math.hypot(x-x0,y-y0)>3) ang=Math.atan2(x-x0,-(y-y0));
+            if(Math.hypot(x-x0,y-y0)>400){ x0=x; y0=y; } }        // pulo grande (GPS voltou, garagem): aparece direto
+          novo.set(o.p,{x0,y0,x1:x,y1:y,t0:agora,ang,l:o.l,d:o.d,ta:o.ta,cor:new THREE.Color(corLinha.get(o.l)||"#2563eb")});
+        }
+        gps=novo;
+      } else if(!R) gps=null;
+    }
+    timer=setTimeout(lerGps,20000);
+  }
   function ponto(v,dd){   // posição e direção a dd metros do início do trecho
     let lo=0, hi=v.ac.length-1; while(hi-lo>1){ const m=(lo+hi)>>1; if(v.ac[m]<=dd) lo=m; else hi=m; }
     const f=(dd-v.ac[lo])/Math.max(.01,v.ac[hi]-v.ac[lo]), x0=v.p[2*lo], y0=v.p[2*lo+1], x1=v.p[2*hi], y1=v.p[2*hi+1];
     return [x0+(x1-x0)*f,y0+(y1-y0)*f,Math.atan2(x1-x0,-(y1-y0))];
   }
   function quadro(){
-    if(!ativo||!D) return;
+    if(!ativo) return;
+    if(gps){
+      const agora=performance.now(); let n=0; quem=[];
+      for(const o of gps.values()){
+        if(n>=MAX) break;
+        const f=Math.min(1,(agora-o.t0)/DESLIZA), x=o.x0+(o.x1-o.x0)*f, y=o.y0+(o.y1-o.y0)*f;
+        if(Math.hypot(x,y)>=B.meta.anel_m) continue;
+        pos.set(x,hZ(x,-y)+.2,-y); q.setFromAxisAngle(up,-o.ang); mx.compose(pos,q,escala);
+        im.setMatrixAt(n,mx); im.setColorAt(n,cor.copy(o.cor)); quem[n]=o; n++;
+      }
+      im.count=n; im.instanceMatrix.needsUpdate=true; if(im.instanceColor) im.instanceColor.needsUpdate=true;
+      return;
+    }
+    if(!D) return;
     const {dia,s}=agoraSP(); let n=0; quem=[];
     for(const v of D.viagens){
       if(!(D.dias[v.s]||[])[dia]) continue;
@@ -2102,7 +2137,7 @@ const onibus=(()=>{
     }
     im.count=n; im.instanceMatrix.needsUpdate=true; if(im.instanceColor) im.instanceColor.needsUpdate=true;
   }
-  function liga(v){ ativo=v; bt.setAttribute("aria-pressed",v); im.visible=v; try{ localStorage.setItem("bairro3d-onibus",v?"1":"0"); }catch(e){} if(v) carrega(); }
+  function liga(v){ ativo=v; bt.setAttribute("aria-pressed",v); im.visible=v; try{ localStorage.setItem("bairro3d-onibus",v?"1":"0"); }catch(e){} if(v){ carrega(); lerGps(); } else clearTimeout(timer); }
   bt.onclick=()=>liga(!ativo); liga(ativo);
   const rc=new THREE.Raycaster(), m2=new THREE.Vector2();
   return { quadro, clique(e){
@@ -2110,6 +2145,10 @@ const onibus=(()=>{
     const r=renderer.domElement.getBoundingClientRect(); m2.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1); rc.setFromCamera(m2,camera);
     const h=rc.intersectObject(im,false)[0]; if(!h) return false;
     const v=quem[h.instanceId]; if(!v) return false;
+    if(v.t0!=null){ const s=Math.max(0,Math.round((Date.now()-Date.parse(v.ta))/1000)), q=s<90?`${s} s`:`${Math.round(s/60)} min`;
+      abrirBalao(h.point.clone().setY(h.point.y+6),`<b>${esc(v.l)} · ${esc(v.d)}</b><div class="tipo"><i style="background:#${v.cor.getHexString()}"></i>${L("Ônibus","Bus")}</div>
+        <p>${L(`GPS ao vivo da SPTrans (Olho Vivo), posição de ${q} atrás.`,`Live SPTrans GPS (Olho Vivo), position from ${q} ago.`)}</p>`);
+      return true; }
     abrirBalao(h.point.clone().setY(h.point.y+6),`<b>${esc(v.r)} · ${esc(v.n)}</b><div class="tipo"><i style="background:${esc(v.c)}"></i>${L("Ônibus","Bus")}</div>
       <p>${L("Posição pela grade programada da SPTrans (GTFS), não pelo GPS do ônibus.","Position from the SPTrans timetable (GTFS), not the bus GPS.")}</p>`);
     return true;

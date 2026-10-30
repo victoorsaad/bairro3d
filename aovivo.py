@@ -11,6 +11,8 @@ Fontes:
   foto      Mapillary (CC BY-SA 4.0, token em MAPILLARY_TOKEN): fotos de rua perto de um ponto (/api/foto?lat=&lon=) e a
             imagem em si (/api/foto/<id>.jpg), passada pelo servidor porque a CSP só deixa carregar imagem do próprio site
   noticias  Google News (RSS público, sem chave): manchetes dos últimos 7 dias que citam Pinheiros ou o Largo da Batata
+  onibus    SPTrans Olho Vivo (token em SPTRANS_TOKEN, só HTTPS): posição GPS de todos os ônibus da cidade, guardada 20 s,
+            e cada pedido recorta em volta de um ponto (/api/onibus, ou ?lat=&lon= para outro centro dentro de SP)
   transito  TomTom (chave do plano grátis em TOMTOM_KEY): velocidade relativa por trecho (tiles "flow relative", zoom 14,
             3×3 em volta do centro) + interdições, acidentes e obras. 5 min de cache: ~2,6 mil tiles e 288 consultas por
             dia, longe dos limites grátis (50 mil tiles, 2,5 mil consultas)
@@ -26,6 +28,7 @@ import email.utils
 import re
 import urllib.parse
 import xml.etree.ElementTree as ET
+import urllib.error
 import urllib.request
 
 import mvt
@@ -244,6 +247,67 @@ def foto_img(ident):
         r = baixar(url, timeout=15, binario=True)
         _imgs.put(ident, r)
     return r
+
+
+OLHO_VIVO = "https://api.olhovivo.sptrans.com.br/v2.1/"
+_ov = {"op": None, "t": 0, "d": None, "trava": threading.Lock()}
+
+
+def _ov_login():
+    chave = os.environ.get("SPTRANS_TOKEN")
+    if not chave:
+        return None
+    op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
+    req = urllib.request.Request(OLHO_VIVO + "Login/Autenticar?token=" + urllib.parse.quote(chave), data=b"",
+                                 headers={"User-Agent": UA}, method="POST")
+    with op.open(req, timeout=10) as r:
+        if r.read().strip() != b"true":
+            raise RuntimeError("Olho Vivo recusou o token")
+    return op
+
+
+def _ov_posicoes():
+    """Todos os ônibus com GPS da cidade: [(lat, lon, prefixo, linha, destino, horário)]. Cache de 20 s."""
+    with _ov["trava"]:
+        if _ov["d"] is not None and time.time() - _ov["t"] < 20:
+            return _ov["d"]
+        for tentativa in range(2):              # sessão expirada volta 401: faz login de novo uma vez
+            if _ov["op"] is None:
+                _ov["op"] = _ov_login()
+                if _ov["op"] is None:
+                    return None
+            try:
+                req = urllib.request.Request(OLHO_VIVO + "Posicao", headers={"User-Agent": UA, "Accept": "application/json"})
+                with _ov["op"].open(req, timeout=15) as r:
+                    d = json.load(r)
+                break
+            except urllib.error.HTTPError as e:
+                _ov["op"] = None
+                if e.code != 401 or tentativa:
+                    raise
+        out = []
+        for l in d.get("l") or []:
+            destino = l.get("lt1") if l.get("sl") == 1 else l.get("lt0")
+            for v in l.get("vs") or []:
+                out.append((v["py"], v["px"], v["p"], l.get("c", ""), destino or "", v.get("ta", "")))
+        _ov["d"], _ov["t"] = out, time.time()
+        return out
+
+
+def onibus(lat=None, lon=None):
+    """Ônibus a até anel_m do centro (ou do ponto pedido, que precisa estar em São Paulo)."""
+    if lat is None:
+        lat, lon = LAT, LON
+    elif not (-24.1 < lat < -23.3 and -47.0 < lon < -46.3):
+        return None
+    todos = _ov_posicoes()
+    if todos is None:
+        return None
+    kx, ky, r = 111320 * math.cos(math.radians(lat)), 110574, CONFIG["anel_m"]
+    out = [{"p": p, "l": c, "d": d, "lat": a, "lon": o, "ta": t} for a, o, p, c, d, t in todos
+           if abs(a - lat) * ky < r and abs(o - lon) * kx < r and math.hypot((a - lat) * ky, (o - lon) * kx) < r]
+    return json.dumps({"fonte": "SPTrans Olho Vivo", "idade": int(time.time() - _ov["t"]), "onibus": out},
+                      separators=(",", ":"), ensure_ascii=False).encode()
 
 
 FONTES = {"noticias": (noticias, 1800), "bike": (bike, 60), "voos": (voos, 10), "clima": (clima, 600), "transito": (transito, 300)}
