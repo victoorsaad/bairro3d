@@ -6,6 +6,7 @@ Serve só o que está na allowlist:
   /assets/<...>             -> arquivos em site/assets (app, estilo, fontes, three.js vendorizado)
   /data/<x>.json|<x>.bin    -> dados gerados pelo pipeline
   /data/chunks/<c>.json     -> pedaços do anel carregados perto da câmera
+  /data/orto/<i>_<j>.webp   -> blocos da foto aérea (Ortofoto 2020 da Prefeitura)
   /robots.txt, /sitemap.xml, /og.jpg -> indexação e prévia de link
   /api/<fonte>              -> dados ao vivo (aovivo.py): o servidor busca na fonte, recorta o raio e guarda em cache
 Qualquer outra coisa (diretórios, dotfiles, .py, caminhos com ..) é 404.
@@ -36,6 +37,7 @@ CSP = (
 )
 INDEXNOW = "28b9e63caa484e51e63f2863046c6c99.txt"  # chave pública do IndexNow (Bing e outros buscadores); não é segredo
 NOME = re.compile(r"^[A-Za-z0-9_-]+\.(json|bin)$")
+ORTO = re.compile(r"^[0-9]+_[0-9]+\.webp$")        # blocos da foto aérea (pipeline/gerar_ortofoto.py)
 
 
 def hash_inline():
@@ -58,6 +60,8 @@ def is_public(path):
             return bool(NOME.match(parts[1]))
         if len(parts) == 3 and parts[1] == "chunks":
             return bool(NOME.match(parts[2])) and parts[2].endswith(".json")
+        if len(parts) == 3 and parts[1] == "orto":
+            return bool(ORTO.match(parts[2]))
     return False
 
 
@@ -67,7 +71,7 @@ class Handler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     timeout = 20  # conexão parada (slowloris) não segura thread para sempre
     extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".json": "application/json",
-                      ".bin": "application/octet-stream", ".js": "text/javascript", ".woff2": "font/woff2"}
+                      ".bin": "application/octet-stream", ".js": "text/javascript", ".woff2": "font/woff2", ".webp": "image/webp"}
 
     def do_GET(self):
         p = self.path.split("?", 1)[0]

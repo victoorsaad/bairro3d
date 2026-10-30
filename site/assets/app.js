@@ -716,7 +716,7 @@ function voarPara(pos,alvo){
 
 // ---------- dia / noite ----------
 const btNoite=document.getElementById("btNoite");
-let noiteAtual=false;
+let noiteAtual=false, ortoNoite=null;   // ortoNoite: a foto aérea (criada mais abaixo) escurece junto
 function modo(noite){
   noiteAtual=noite; btNoite.setAttribute("aria-pressed",noite); palco.classList.toggle("noite",noite);
   const ceu=new THREE.Color(noite?0x0d1430:0xdfe8f3);
@@ -732,6 +732,7 @@ function modo(noite){
   matAresta.color.set(noite?0x9aa3d8:0x5c6678); matAresta.opacity=noite?.45:.55;
   matRua.color.set(noite?0x3a4158:0x9aa1ad); matCalcada.color.set(noite?0x2c3248:0xd8d4cb);
   chao.material.color.set(noite?0x252b47:0xffffff);   // multiplica as cores do terreno
+  ortoNoite?.(noite);
   horizonte.noite(noite);
   matCurva.color.set(noite?0x9aa6e0:0x8a6f55); matMestra.color.set(noite?0xb4bdf0:0x7a5d43);
   matTrilho.color.set(noite?0x4a4258:0x7d6f66);
@@ -1094,6 +1095,42 @@ const btRelevo=document.getElementById("btRelevo");
 function relevo(v){ curvas.visible=v; btRelevo.setAttribute("aria-pressed",v); try{ localStorage.setItem("bairro3d-relevo",v?"1":"0"); }catch(e){} }
 btRelevo.onclick=()=>relevo(!curvas.visible);
 { let v=true; try{ v=localStorage.getItem("bairro3d-relevo")!=="0"; }catch(e){} relevo(v&&!!RM); if(!RM) btRelevo.hidden=true; }
+
+// ---------- foto aérea: Ortofoto 2020 da Prefeitura em blocos sobre o relevo; só baixa (~6 MB) quando ligada ----------
+const btOrto=document.getElementById("btOrto");
+const orto=(()=>{
+  const g=new THREE.Group(); g.visible=false; scene.add(g);
+  const mat=[]; let carregado=null;
+  ortoNoite=v=>mat.forEach(m=>m.color.set(v?0x4a5070:0xffffff));
+  function carrega(){
+    if(carregado) return carregado;
+    return carregado=pegar("orto.json").then(M=>{
+      if(!M){ btOrto.hidden=true; return; }
+      const P=20, R=chao.userData.R, n=Math.round(M.passo_m/P), an=renderer.capabilities.getMaxAnisotropy(), carr=new THREE.TextureLoader();
+      for(let j=0;j<M.blocos;j++) for(let i=0;i<M.blocos;i++){
+        const x0=M.min+i*M.passo_m, y0=M.min+j*M.passo_m, pos=[], uv=[], idx=[];
+        for(let b=0;b<=n;b++) for(let a=0;a<=n;a++){ const x=x0+a*P, y=y0+b*P; pos.push(x,hAt(x,y)+.04,-y); uv.push(a/n,b/n); }
+        for(let b=0;b<n;b++) for(let a=0;a<n;a++){
+          if(Math.hypot(x0+(a+.5)*P,y0+(b+.5)*P)>R) continue;     // mesmo recorte redondo do chão
+          const k=b*(n+1)+a; idx.push(k,k+1,k+n+1, k+1,k+n+2,k+n+1);
+        }
+        if(!idx.length) continue;
+        const geo=new THREE.BufferGeometry();
+        geo.setAttribute("position",new THREE.Float32BufferAttribute(pos,3)); geo.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));
+        geo.setIndex(idx); geo.computeVertexNormals();
+        const m=new THREE.MeshLambertMaterial({color:noiteAtual?0x4a5070:0xffffff,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1});
+        carr.load(`${DADOS}orto/${i}_${j}.webp`,t=>{ t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=an; m.map=t; m.needsUpdate=true; });
+        mat.push(m); const me=new THREE.Mesh(geo,m); me.receiveShadow=true; g.add(me);
+      }
+    });
+  }
+  return {
+    liga(v){ g.visible=v; ruasMesh.visible=calcMesh.visible=!v; btOrto.setAttribute("aria-pressed",v); if(v) carrega(); },
+    get visivel(){ return g.visible; },
+  };
+})();
+btOrto.onclick=()=>{ orto.liga(!orto.visivel); try{ localStorage.setItem("bairro3d-orto",orto.visivel?"1":"0"); }catch(e){} };
+{ let v=false; try{ v=localStorage.getItem("bairro3d-orto")==="1"; }catch(e){} if(v) orto.liga(true); }
 const btGirar=document.getElementById("btGirar");
 btGirar.onclick=()=>{ controls.autoRotate=!controls.autoRotate; btGirar.setAttribute("aria-pressed",controls.autoRotate);
   if(controls.autoRotate&&controls.target.distanceTo(C)>60) controls.target.copy(C).setY(25); };
@@ -1902,7 +1939,7 @@ const estilos=(()=>{
 const LINK=(()=>{ const h=new URLSearchParams(location.hash.slice(1)); return {v:h.get("v"),c:h.has("c")?h.get("c").split(",").filter(Boolean):null,e:h.get("e")}; })();
 function linkAtual(){
   const r=v=>Math.round(v), p=camera.position, a=controls.target;
-  const c=[["bike","btBike"],["avioes","btAvioes"],["transito","btTransito"],["noite","btNoite"]].filter(([,id])=>document.getElementById(id)?.getAttribute("aria-pressed")==="true").map(([k])=>k);
+  const c=[["bike","btBike"],["avioes","btAvioes"],["transito","btTransito"],["orto","btOrto"],["noite","btNoite"]].filter(([,id])=>document.getElementById(id)?.getAttribute("aria-pressed")==="true").map(([k])=>k);
   const h=new URLSearchParams({v:[p.x,p.y,p.z,a.x,a.y,a.z].map(r).join(","),c:c.join(",")}); if(estilos.nome!=="normal") h.set("e",estilos.nome);
   return location.origin+location.pathname+location.search+"#"+h.toString().replace(/%2C/g,",");
 }
@@ -1914,7 +1951,7 @@ function linkAtual(){
 if(LINK.v){ const n=LINK.v.split(",").map(Number); if(n.length===6&&n.every(Number.isFinite)){ camera.position.set(n[0],n[1],n[2]); controls.target.set(n[3],n[4],n[5]); anim=null; } }
 if(LINK.e) estilos.liga(LINK.e);
 if(LINK.c){ const quer=new Set(LINK.c); if(quer.has("noite")!==noiteAtual) modo(quer.has("noite"));
-  for(const [k,id] of [["bike","btBike"],["avioes","btAvioes"],["transito","btTransito"]]){ const b=document.getElementById(id); if(b&&!b.hidden&&(b.getAttribute("aria-pressed")==="true")!==quer.has(k)) b.click(); } }
+  for(const [k,id] of [["bike","btBike"],["avioes","btAvioes"],["transito","btTransito"],["orto","btOrto"]]){ const b=document.getElementById(id); if(b&&!b.hidden&&(b.getAttribute("aria-pressed")==="true")!==quer.has(k)) b.click(); } }
 
 // ---------- notícias de Pinheiros (Google News, últimos 7 dias); quando citam um lugar do mapa, dá para voar até ele ----------
 { const lista=document.getElementById("noticiasLista");

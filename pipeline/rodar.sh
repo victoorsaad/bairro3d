@@ -31,4 +31,5 @@ run "$D/zoneamento.py" "$OUT/bairro.json" "$OUT/zonas.json" "$P"/ad_*
 run "$D/atualizar_postos.py" "$OUT/postos.json" "$RAW"
 # GTFS da SPTrans: baixe na área de desenvolvedores (precisa de login) e descompacte em $RAW/gtfs
 [ -f "$RAW/gtfs/trips.txt" ] && run "$D/gerar_onibus.py" "$RAW/gtfs" "$OUT/bairro.json" "$OUT/onibus.json"
+run "$D/gerar_ortofoto.py" "$OUT"
 echo "pronto: $OUT"
