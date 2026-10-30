@@ -2097,6 +2097,18 @@ const onibus=(()=>{
   let gps=null, gpsFalhou=false, timer=0, relogio=null;   // relogio: [hora da leitura mais nova (ms), performance.now() ao receber]
   const porLinha=new Map(), kx=B.meta.m_por_grau.lon, ky=B.meta.m_por_grau.lat, org=B.meta.origem, ATRASO=60000;
   try{ ativo=localStorage.getItem("bairro3d-onibus")==="1"; }catch(e){}
+  // tags "ao vivo" (número da linha + ponto verde pulsando) nos ônibus mais perto do centro da vista; o clicado sempre tem
+  const est=document.createElement("style");
+  est.textContent=`.tagOni{position:absolute;transform:translate(-50%,-100%);pointer-events:none;z-index:2;display:flex;align-items:center;gap:4px;
+    padding:2px 6px 2px 5px;border-radius:9px;border:1.5px solid var(--c);background:rgba(17,24,39,.84);color:#fff;font:600 10px/1.2 system-ui,sans-serif;white-space:nowrap}
+    .tagOni.sel{font-size:11px;padding:3px 7px 3px 6px;z-index:3}
+    .tagOni i{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulsoOni 1.6s infinite}
+    @keyframes pulsoOni{0%{box-shadow:0 0 0 0 rgba(34,197,94,.75)}70%{box-shadow:0 0 0 6px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+    @media (prefers-reduced-motion:reduce){.tagOni i{animation:none}}`;
+  document.head.appendChild(est);
+  const TAGS=40, tags=Array.from({length:TAGS},()=>{ const el=document.createElement("div"); el.className="tagOni"; el.style.display="none"; el.innerHTML="<i></i><span></span>"; palco.appendChild(el); return {el,txt:el.lastChild,de:null}; });
+  const tp=new THREE.Vector3();
+  let sel=null, rota=null, rotaEm=null;   // rotaEm: o balão do ônibus; se outro balão abrir ou fechar, a rota some   // ônibus clicado e o traçado da linha dele desenhado no chão
   const agoraSP=()=>{ const p=Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/Sao_Paulo",hour12:false,weekday:"short",hour:"2-digit",minute:"2-digit",second:"2-digit"}).formatToParts(new Date()).map(x=>[x.type,x.value]));
     return {dia:["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].indexOf(p.weekday),s:(+p.hour%24)*3600+(+p.minute)*60+(+p.second)+(Date.now()%1000)/1000}; };
   function carrega(){
@@ -2192,10 +2204,48 @@ const onibus=(()=>{
         }
       }
     }
+    rotulaTags(n);
+    if(rota&&(balao.hidden||balaoEm!==rotaEm)) tiraRota();
     im.count=imDet.count=n; im.instanceMatrix.needsUpdate=imDet.instanceMatrix.needsUpdate=true; if(im.instanceColor) im.instanceColor.needsUpdate=true;
     im.boundingSphere=null;   // os ônibus andam: a esfera de limites do clique é refeita no próximo raycast
   }
-  function liga(v){ ativo=v; bt.setAttribute("aria-pressed",v); im.visible=imDet.visible=v; try{ localStorage.setItem("bairro3d-onibus",v?"1":"0"); }catch(e){} if(v) lerGps(); else clearTimeout(timer); }
+  function rotulaTags(n){
+    const r=palco.getBoundingClientRect(), W=r.width, H=r.height, longe=camera.position.distanceTo(controls.target)>1500, cand=[];
+    if(gps&&!longe) for(let k=0;k<n;k++){ const o=quem[k]; if(!o?.fixes) continue;
+      tp.copy(onde[k]); tp.y+=4.2*escala.x; const d=tp.distanceToSquared(controls.target); tp.project(camera);
+      if(tp.z>1||Math.abs(tp.x)>1||Math.abs(tp.y)>1) continue;
+      cand.push([o===sel?-1:d,o,(tp.x+1)/2*W,(1-tp.y)/2*H]); }
+    if(sel&&longe) for(let k=0;k<n;k++) if(quem[k]===sel){ tp.copy(onde[k]); tp.y+=4.2*escala.x; tp.project(camera);
+      if(tp.z<1&&Math.abs(tp.x)<1&&Math.abs(tp.y)<1) cand.push([-1,sel,(tp.x+1)/2*W,(1-tp.y)/2*H]); }
+    cand.sort((a,b)=>a[0]-b[0]);
+    for(let k=0;k<TAGS;k++){ const t=tags[k], c=cand[k];
+      if(!c){ if(t.de!==null){ t.el.style.display="none"; t.de=null; } continue; }
+      const o=c[1];
+      if(t.de!==o){ t.de=o; t.txt.textContent=o.l; t.el.style.setProperty("--c","#"+o.cor.getHexString()); t.el.classList.toggle("sel",o===sel); t.el.style.display=""; }
+      t.el.style.left=`${c[2]}px`; t.el.style.top=`${c[3]}px`;
+    }
+  }
+  function tiraRota(){ if(!rota) return; scene.remove(rota); rota.traverse(m=>{ m.geometry?.dispose(); m.material?.dispose(); }); rota=null; sel=null; tags.forEach(t=>{ t.de=null; }); }
+  function mostraRota(o){   // traçado da linha no chão: à frente do ônibus forte, para trás apagado; sem sentido conhecido, todos os traçados
+    tiraRota(); sel=o; rota=new THREE.Group();
+    const hsl={}; o.cor.getHSL(hsl); const c=new THREE.Color().setHSL(hsl.h,Math.max(.65,hsl.s),Math.min(.62,Math.max(.5,hsl.l)));   // cor da linha, clara o bastante para ler no asfalto
+    const seg=[...o.fixes].reverse().find(f=>f.seg)?.seg, k=Math.min(3,Math.max(1,camera.position.distanceTo(controls.target)/350));   // de longe, mais grossa
+    const faixa=(p,op,w,cc=c,y=.5)=>{ if(p.length<4) return; const m=new THREE.Mesh(fita([{p,w}],y),new THREE.MeshBasicMaterial({color:cc,side:THREE.DoubleSide,transparent:op<1,opacity:op,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2}));
+      m.renderOrder=2; m.raycast=()=>{}; rota.add(m); };
+    if(seg){
+      const v=seg.v, T=relogio?relogio[0]+(performance.now()-relogio[1])-ATRASO:0, [bx,by]=naHora(o,T);
+      const s0=projeta(v,bx,by)[1], atras=[], frente=[bx,by];
+      for(let i=0;i<v.ac.length;i++){ if(v.ac[i]<s0) atras.push(v.p[2*i],v.p[2*i+1]); else frente.push(v.p[2*i],v.p[2*i+1]); }
+      atras.push(bx,by);
+      faixa(atras,.5,5*k); faixa(frente,1,11*k,new THREE.Color(0xffffff),.45); faixa(frente,1,7*k);   // à frente: contorno branco
+      // setas no sentido da viagem, a cada 120 m à frente
+      const geoSeta=new THREE.ConeGeometry(3.2*k,8*k,3); geoSeta.rotateX(Math.PI/2);
+      for(let d=s0+60;d<v.ac[v.ac.length-1]-20;d+=120){ const [x,y,ang]=ponto(v,d), m=new THREE.Mesh(geoSeta,new THREE.MeshBasicMaterial({color:0xffffff}));
+        m.position.set(x,hZ(x,-y)+1.5*k,-y); m.rotation.y=ang; m.raycast=()=>{}; rota.add(m); }
+    } else for(const v of porLinha.get(o.l)||[]) faixa(v.p,.85,7*k);
+    scene.add(rota);
+  }
+  function liga(v){ ativo=v; bt.setAttribute("aria-pressed",v); im.visible=imDet.visible=v; try{ localStorage.setItem("bairro3d-onibus",v?"1":"0"); }catch(e){} if(v) lerGps(); else { clearTimeout(timer); tags.forEach(t=>t.el.style.display="none"); tiraRota(); } }
   bt.onclick=()=>liga(!ativo); liga(ativo);
   const rc=new THREE.Raycaster(), m2=new THREE.Vector2(), w=new THREE.Vector3();
   return { quadro, get n(){ return im.count; }, clique(e){
@@ -2209,8 +2259,8 @@ const onibus=(()=>{
     }
     const v=i==null?null:quem[i]; if(!v) return false;
     const alvo=onde[i].clone().setY(onde[i].y+6);
-    if(v.fixes) abrirBalao(alvo,`<b>${esc(v.l)} · ${esc(v.d)}</b><div class="tipo"><i style="background:#${v.cor.getHexString()}"></i>${L("Ônibus","Bus")}</div>
-        <p>${L("GPS ao vivo da SPTrans (Olho Vivo). O ônibus anda com cerca de 1 min de atraso, pelo traçado da linha entre uma leitura e a seguinte.","Live SPTrans GPS (Olho Vivo). Buses play back about 1 min behind, following the route between one reading and the next.")}</p>`);
+    if(v.fixes){ mostraRota(v); abrirBalao(alvo,`<b>${esc(v.l)} · ${esc(v.d)}</b><div class="tipo"><i style="background:#${v.cor.getHexString()}"></i>${L("Ônibus","Bus")}</div>
+        <p>${L("GPS ao vivo da SPTrans (Olho Vivo). O ônibus anda com cerca de 1 min de atraso, pelo traçado da linha entre uma leitura e a seguinte.","Live SPTrans GPS (Olho Vivo). Buses play back about 1 min behind, following the route between one reading and the next.")}</p>`); rotaEm=balaoEm; }
     else abrirBalao(alvo,`<b>${esc(v.r)} · ${esc(v.n)}</b><div class="tipo"><i style="background:${esc(v.c)}"></i>${L("Ônibus","Bus")}</div>
       <p>${L("Posição pela grade programada da SPTrans (GTFS): o GPS está fora do ar agora.","Position from the SPTrans timetable (GTFS): the GPS feed is down right now.")}</p>`);
     return true;
