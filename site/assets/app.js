@@ -1153,14 +1153,14 @@ function graficoSerie(serie,anos){
   const k=s=>+s.slice(0,4)*2+(+s.slice(5)-1), pts=serie.map(([s,m,n])=>[k(s),m,n]);
   const pr=Object.entries(anos||{}).map(([a,[m,n]])=>[+a*2+.5,m,n]);
   const k0=pts[0][0], k1=Math.max(pts[pts.length-1][0],...pr.map(p=>p[0])), vs=[...pts.map(p=>p[1]),...pr.map(p=>p[1])];
-  const lo=Math.min(...vs)*.92, hi=Math.max(...vs)*1.05, W=300,H=118,Lm=34,Rm=8,Tm=8,Bm=20;
+  const lo=Math.min(...vs)*.92, hi=Math.max(...vs)*1.05, W=300,H=126,Lm=34,Rm=8,Tm=8,Bm=26;
   const X=v=>Lm+(v-k0)/Math.max(1,k1-k0)*(W-Lm-Rm), Y=v=>Tm+(hi-v)/(hi-lo)*(H-Tm-Bm);
   const passo=hi-lo>12000?4000:hi-lo>6000?2000:1000, linhasY=[]; for(let v=Math.ceil(lo/passo)*passo; v<hi; v+=passo) linhasY.push(v);
   const as=[]; for(let a=Math.ceil(k0/2); a*2<=k1; a++) as.push(a);
   const var_=(pts[pts.length-1][1]/pts[0][1]-1)*100;
   return `<div class="graf"><p class="gt">${L("R$/m² de apartamentos, mediana por semestre","Apartment price per m² (R$), half-year median")}</p>
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${T("Mediana do R$/m² por semestre","Median R$/m² per half-year")}">
-      ${linhasY.map(v=>`<line x1="${Lm}" x2="${W-Rm}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" class="gl"/><text x="${Lm-4}" y="${(Y(v)+3.5).toFixed(1)}" text-anchor="end">${v/1000}k</text>`).join("")}
+      ${linhasY.map(v=>`<line x1="${Lm}" x2="${W-Rm}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" class="gl"/><text x="${Lm-4}" y="${(Y(v)+4).toFixed(1)}" text-anchor="end">${v/1000}k</text>`).join("")}
       ${as.filter((a,i)=>as.length<8||i%2===0).map(a=>`<text x="${X(a*2).toFixed(1)}" y="${H-5}" text-anchor="middle">${a}</text>`).join("")}
       <polyline class="gb" points="${pts.map(p=>`${X(p[0]+.5).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ")}"/>
       ${pts.map(p=>`<circle class="gp" cx="${X(p[0]+.5).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="2.4"><title>${p[0]>>1}/${p[0]%2+1}: ${brl(p[1])}/m² (${p[2]})</title></circle>`).join("")}
@@ -2100,8 +2100,8 @@ const onibus=(()=>{
   // tags "ao vivo" (número da linha + ponto verde pulsando) nos ônibus mais perto do centro da vista; o clicado sempre tem
   const est=document.createElement("style");
   est.textContent=`.tagOni{position:absolute;transform:translate(-50%,-100%);pointer-events:none;z-index:2;display:flex;align-items:center;gap:4px;
-    padding:2px 6px 2px 5px;border-radius:9px;border:1.5px solid var(--c);background:rgba(17,24,39,.84);color:#fff;font:600 10px/1.2 system-ui,sans-serif;white-space:nowrap}
-    .tagOni.sel{font-size:11px;padding:3px 7px 3px 6px;z-index:3}
+    padding:2px 6px 2px 5px;border-radius:9px;border:1.5px solid var(--c);background:rgba(17,24,39,.84);color:#fff;font:600 12px/1.2 system-ui,sans-serif;white-space:nowrap}
+    .tagOni.sel{font-size:12px;padding:3px 7px 3px 6px;z-index:3}
     .tagOni i{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulsoOni 1.6s infinite}
     @keyframes pulsoOni{0%{box-shadow:0 0 0 0 rgba(34,197,94,.75)}70%{box-shadow:0 0 0 6px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
     @media (prefers-reduced-motion:reduce){.tagOni i{animation:none}}`;
